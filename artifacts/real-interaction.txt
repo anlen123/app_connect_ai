@@ -1,0 +1,7 @@
+{
+  agent: 'pi',
+  realRpcDialog: true,
+  answeredWhilePromptPending: true,
+  receivedAnswer: true,
+  completed: true
+}

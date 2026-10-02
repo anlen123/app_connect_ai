@@ -1,0 +1,11 @@
+
+Running 2 tests using 1 worker
+
+(node:150034) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:150034) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/dashboard.spec.js:2:1 › computer dashboard streams tasks, decisions, models and pairing QR (3.0s)
+  ✓  2 e2e/dashboard.spec.js:33:1 › launcher fragment authenticates without leaking token into HTTP URLs (153ms)
+
+  2 passed (4.7s)

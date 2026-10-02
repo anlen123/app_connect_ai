@@ -1,0 +1,2 @@
+{"agent":"pi","models":455,"model":"openai-codex/gpt-6.1-sol","completed":"completed","text":"LAN_SMOKE_OK\nLAN_SMOKE_OK","thinking":0,"tools":4,"errors":[],"pass":true}
+{"agent":"codex","models":8,"model":"gpt-6.1-sol","completed":"completed","text":"我会只读取当前目录，不写入文件。\n\nLAN_SMOKE_OK","thinking":0,"tools":2,"errors":[],"pass":true}

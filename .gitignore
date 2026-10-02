@@ -1,0 +1,13 @@
+bridge/node_modules/
+bridge/test-results/
+bridge/playwright-report/
+android/.gradle/
+android/**/build/
+android/local.properties
+.lan-agent/
+*.log
+*.keystore
+*.jks
+artifacts/*.apk
+artifacts/*.zip
+artifacts/deployment.json
