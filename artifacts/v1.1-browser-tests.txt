@@ -1,0 +1,23 @@
+[WebServer] (node:17139) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 8 tests using 1 worker
+
+(node:17147) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17147) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [desktop-linux-http] › e2e/dashboard.spec.js:24:3 › pi: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.5s)
+  ✓  2 [desktop-linux-http] › e2e/dashboard.spec.js:24:3 › codex: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.5s)
+  ✓  3 [desktop-linux-http] › e2e/dashboard.spec.js:50:1 › phone browser link pairs directly and another device sees chat and deletion (3.3s)
+  ✓  4 [desktop-linux-http] › e2e/dashboard.spec.js:67:1 › invalid login and invalid project directory show useful errors without broken state (1.2s)
+(node:17335) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17335) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  5 [phone-linux-http] › e2e/dashboard.spec.js:24:3 › pi: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.4s)
+  ✓  6 [phone-linux-http] › e2e/dashboard.spec.js:24:3 › codex: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.4s)
+  ✓  7 [phone-linux-http] › e2e/dashboard.spec.js:50:1 › phone browser link pairs directly and another device sees chat and deletion (3.4s)
+  ✓  8 [phone-linux-http] › e2e/dashboard.spec.js:67:1 › invalid login and invalid project directory show useful errors without broken state (1.1s)
+
+  8 passed (26.4s)

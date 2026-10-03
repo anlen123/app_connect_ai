@@ -16,7 +16,7 @@ public class RealAgentTest {
     private <T> T onMain(java.util.concurrent.Callable<T> action) { AtomicReference<T> out=new AtomicReference<>(); AtomicReference<Exception> error=new AtomicReference<>(); InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> { try {out.set(action.call());}catch(Exception e){error.set(e);} }); if(error.get()!=null)throw new RuntimeException(error.get());return out.get(); }
     private void until(BooleanSupplier condition) throws Exception {long end=System.currentTimeMillis()+150000;while(System.currentTimeMillis()<end){if(condition.getAsBoolean())return;Thread.sleep(150);}fail("Live agent timed out");}
     private JSONObject command(String type, JSONObject p) throws Exception {AtomicReference<JSONObject> data=new AtomicReference<>();AtomicReference<String> error=new AtomicReference<>();AtomicReference<Boolean> done=new AtomicReference<>(false);onMain(() -> {AgentService.current.command(type,p,(d,e)->{data.set(d);error.set(e);done.set(true);});return null;});until(done::get);assertNull(error.get());return data.get();}
-    @Test public void windowsLanToWslPiAndCodexFromAndroid() throws Exception {
+    @Test public void linuxServiceToPiAndCodexFromAndroid() throws Exception {
         String url=InstrumentationRegistry.getArguments().getString("realUrl"),token=InstrumentationRegistry.getArguments().getString("realToken");
         Assume.assumeTrue("Supply private pairing arguments for the live test",url!=null && token!=null);
         context=InstrumentationRegistry.getInstrumentation().getTargetContext(); UiDevice device=UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());device.wakeUp();device.pressHome();
@@ -25,7 +25,7 @@ public class RealAgentTest {
         context.startActivity(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         until(() -> onMain(() -> AgentService.current!=null && AgentService.current.connection.startsWith("●")));
         for(String kind:new String[]{"pi","codex"}) {
-            JSONObject session=command("create",new JSONObject().put("agent",kind).put("cwd","lan-agent/bridge/test"));String id=session.getString("id");assertTrue(session.getJSONArray("models").length()>0);
+            JSONObject session=command("create",new JSONObject().put("agent",kind).put("cwd",InstrumentationRegistry.getArguments().getString("realCwd",".")));String id=session.getString("id");assertTrue(session.getJSONArray("models").length()>0);
             String original = session.getString("model"), alternative = null;
             JSONArray models = session.getJSONArray("models");
             for (int i=0;i<models.length();i++) { String candidate=models.getJSONObject(i).getString("id"); if (!candidate.equals(original) && (!kind.equals("pi") || candidate.startsWith(original.substring(0,original.indexOf('/')+1)))) { alternative=candidate; break; } }
@@ -50,7 +50,7 @@ public class RealAgentTest {
             assertTrue(kind,onMain(() -> AgentService.current.events.get(id).stream().anyMatch(e -> "assistant".equals(e.optString("channel")) && e.optString("text").contains("LAN_ANDROID_OK"))));
             assertTrue(kind,onMain(() -> AgentService.current.events.get(id).stream().anyMatch(e -> "tool".equals(e.optString("event")))));
             assertTrue(kind,java.util.Arrays.stream(context.getSystemService(NotificationManager.class).getActiveNotifications()).anyMatch(n -> n.getTag()!=null && n.getTag().equals(id+":done") && "任务已完成".equals(n.getNotification().extras.getString("android.title"))));
-            command("close",new JSONObject().put("sessionId",id));
+            command("delete",new JSONObject().put("sessionId",id));
         }
     }
 }

@@ -1,16 +1,33 @@
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync, realpathSync, existsSync } from 'node:fs';
-import { dirname, resolve, relative, isAbsolute } from 'node:path';
+import { accessSync, constants, mkdirSync, readFileSync, writeFileSync, appendFileSync, realpathSync, existsSync, statSync, renameSync, rmSync } from 'node:fs';
+import { dirname, resolve, relative, isAbsolute, delimiter } from 'node:path';
+import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { PiAgent, CodexAgent } from './agents.js';
+import { VERSION } from './version.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const clipped = value => String(value ?? '').slice(0, 200000);
+const apkPath = resolve(here, `../../artifacts/lan-agent-${VERSION}.apk`);
+export function agentCatalog() {
+  function available(command) {
+    const candidates = command.includes('/') ? [command] : (process.env.PATH || '').split(delimiter).map(dir => resolve(dir, command));
+    return candidates.some(path => { try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; } });
+  }
+  return [{ id: 'pi', name: 'Pi', available: available(process.env.PI_BIN || 'pi'), description: 'Pi RPC · 可扩展编程助手' }, { id: 'codex', name: 'Codex', available: available(process.env.CODEX_BIN || 'codex'), description: 'Codex app-server · 代码与任务助手' }];
+}
+export function linuxLanUrl(port) {
+  const entries = Object.entries(networkInterfaces()).flatMap(([name, addresses]) => (addresses || []).filter(a => a.family === 'IPv4' && !a.internal).map(a => ({ name, address: a.address })));
+  const primary = entries.find(a => !/^(docker|veth|br-|virbr)/.test(a.name)) || entries[0];
+  return `http://${primary?.address || '127.0.0.1'}:${port}`;
+}
+
 export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.lan-agent'), token, advertisedUrl, agentFactory, quiet = false } = {}) {
-  root = realpathSync(root); mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  root = realpathSync(root);
+  if (!statSync(root).isDirectory()) throw new Error('AGENT_ROOT 必须是 Linux 上存在的目录');
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const tokenPath = resolve(dataDir, 'token');
   token ||= existsSync(tokenPath) ? readFileSync(tokenPath, 'utf8').trim() : randomBytes(24).toString('base64url');
   if (token.length < 24) throw new Error('Pairing token must be at least 24 characters');
@@ -20,19 +37,33 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
   if (existsSync(metadataPath)) {
     let saved;
     try { saved = JSON.parse(readFileSync(metadataPath, 'utf8')); }
-    catch (e) { throw new Error(`Session metadata is damaged; preserve ${metadataPath} before recovery: ${e.message}`); }
+    catch (e) { throw new Error(`会话索引损坏，请保留 ${metadataPath} 后恢复：${e.message}`); }
+    if (!Array.isArray(saved)) throw new Error('会话索引格式错误');
     for (const s of saved) {
+      if (!/^[0-9a-f-]{36}$/.test(s.id) || !['pi', 'codex'].includes(s.kind)) continue;
       let events = [];
       const path = resolve(dataDir, `${s.id}.jsonl`);
       if (existsSync(path)) events = readFileSync(path, 'utf8').split('\n').filter(Boolean).flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
-      sessions.set(s.id, { ...s, status: 'offline', events: events.slice(-10000), seq: events.at(-1)?.seq || 0, choices: new Map(), agent: null, busy: false, turns: events.filter(e => e.event === 'user').length, tools: events.filter(e => e.event === 'tool' && e.status === 'start').length });
+      sessions.set(s.id, { ...s, status: 'offline', events: events.slice(-10000), seq: events.at(-1)?.seq || 0, choices: new Map(), agent: null, initialized: false, busy: false, turns: events.filter(e => e.event === 'user').length, tools: events.filter(e => e.event === 'tool' && e.status === 'start').length });
     }
   }
-  function summary(s) { return { id: s.id, agent: s.kind, title: s.title, cwd: s.cwd, status: s.status, model: s.model, models: s.models, seq: s.seq, turns: s.turns, tools: s.tools }; }
-  function save() { writeFileSync(metadataPath, JSON.stringify([...sessions.values()].map(s => ({ id: s.id, kind: s.kind, title: s.title, cwd: s.cwd, model: s.model, models: s.models }))), { mode: 0o600 }); }
-  function send(ws, data) { if (ws.readyState !== WebSocket.OPEN) return; if (ws.bufferedAmount > 8 * 1024 * 1024) return ws.close(1013, 'Client too slow; reconnect for replay'); ws.send(JSON.stringify(data)); }
+  function catalog() { return agentFactory ? agentCatalog().map(a => ({ ...a, available: true })) : agentCatalog(); }
+  function summary(s) { return { id: s.id, agent: s.kind, title: s.title, cwd: s.cwd, status: s.status, model: s.model, models: s.models, seq: s.seq, turns: s.turns, tools: s.tools, active: Boolean(s.agent && !s.agent.closed), ready: Boolean(s.initialized && s.agent && !s.agent.closed) }; }
+  function save() {
+    const data = [...sessions.values()].map(s => ({ id: s.id, kind: s.kind, title: s.title, cwd: s.cwd, model: s.model, models: s.models }));
+    writeFileSync(`${metadataPath}.tmp`, JSON.stringify(data), { mode: 0o600 });
+    renameSync(`${metadataPath}.tmp`, metadataPath);
+  }
+  function send(ws, data) {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (ws.bufferedAmount > 8 * 1024 * 1024) { ws.close(1013, 'Client too slow; reconnect for replay'); return; }
+    ws.send(JSON.stringify(data));
+  }
   function broadcast(data) { for (const ws of clients) send(ws, data); }
+  function broadcastSessions() { broadcast({ type: 'sessions', sessions: [...sessions.values()].map(summary) }); }
   function event(s, type, payload = {}) {
+    // A late callback from a deleted process must never recreate its history file.
+    if (s.deleted) return;
     if (type === 'status') s.status = payload.status;
     if (type === 'choice') { s.choices.set(payload.requestId, payload); s.status = 'waiting'; }
     if (type === 'choice_closed') { s.choices.delete(payload.requestId); if (!s.choices.size && s.status === 'waiting') s.status = 'running'; }
@@ -44,28 +75,46 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
     s.events.push(record); if (s.events.length > 10000) s.events.shift();
     appendFileSync(resolve(dataDir, `${s.id}.jsonl`), JSON.stringify(record) + '\n', { mode: 0o600 });
     broadcast(record);
-    if (['status', 'choice', 'choice_closed', 'completed', 'error', 'model', 'user', 'tool'].includes(type)) broadcast({ type: 'sessions', sessions: [...sessions.values()].map(summary) });
-    if (!quiet && ['user', 'tool', 'choice', 'completed', 'error'].includes(type)) console.log(`[${s.kind}:${s.id.slice(0, 8)}] ${type} ${payload.text?.slice(0, 100) || payload.title || payload.name || payload.status || ''}`);
+    if (['status', 'choice', 'choice_closed', 'completed', 'error', 'model', 'user', 'tool'].includes(type)) broadcastSessions();
+    if (!quiet && ['user', 'tool', 'choice', 'completed', 'error'].includes(type)) console.log(`[${s.kind}:${s.id.slice(0, 8)}] ${type} ${payload.title || payload.name || payload.status || ''}`);
     return record;
   }
   function validCwd(input) {
-    const cwd = realpathSync(resolve(root, input || '.')), diff = relative(root, cwd);
+    if (input != null && typeof input !== 'string') throw new Error('目录必须是字符串');
+    let cwd;
+    try { cwd = realpathSync(resolve(root, input || '.')); } catch { throw new Error('项目目录不存在，请填写 Linux 服务根目录内的文件夹'); }
+    const diff = relative(root, cwd);
     if (diff === '..' || diff.startsWith('../') || isAbsolute(diff)) throw new Error('Working directory must be inside bridge root');
+    if (!statSync(cwd).isDirectory()) throw new Error('项目目录必须是文件夹，不能选择文件');
     return cwd;
   }
   function snapshot(s) { return { ...summary(s), choices: [...s.choices.values()], events: s.events }; }
   function authenticated(value) { const a = Buffer.from(String(value || '')), b = Buffer.from(token); return a.length === b.length && timingSafeEqual(a, b); }
+  function originFor(req) {
+    try {
+      if (req.headers.origin) {
+        const origin = new URL(req.headers.origin);
+        if (['http:', 'https:'].includes(origin.protocol) && origin.host === req.headers.host) return origin.origin;
+      }
+      const scheme = req.socket.encrypted ? 'https' : 'http';
+      return new URL(`${scheme}://${req.headers.host}`).origin;
+    } catch { return ''; }
+  }
+  function lanAddress(origin = '') {
+    if (advertisedUrl) return advertisedUrl.replace(/\/$/, '');
+    try { if (origin && !['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname)) return origin; } catch { /* fall back to a Linux interface */ }
+    return linuxLanUrl(server.address()?.port || 8787);
+  }
   const server = http.createServer((req, res) => {
     let u;
     try { u = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end(); return; }
     if (req.method !== 'GET') { res.writeHead(405); res.end(); return; }
-    if (u.pathname === '/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ ok: true, version: '1.0.0' })); return; }
+    if (u.pathname === '/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ ok: true, version: VERSION })); return; }
     if (u.pathname === '/app.apk') {
-      const apk = resolve(here, '../../artifacts/lan-agent-1.0.0.apk');
-      if (!existsSync(apk)) { res.writeHead(404); res.end('APK not built yet'); return; }
+      if (!existsSync(apkPath)) { res.writeHead(404); res.end('可直接使用手机浏览器；可选 APK 请从 GitHub Release 下载。'); return; }
       res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-      res.setHeader('Content-Disposition', 'attachment; filename="lan-agent-1.0.0.apk"');
-      res.setHeader('X-Content-Type-Options', 'nosniff'); res.end(readFileSync(apk)); return;
+      res.setHeader('Content-Disposition', `attachment; filename="lan-agent-${VERSION}.apk"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff'); res.end(readFileSync(apkPath)); return;
     }
     const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
     const file = files[u.pathname]; if (!file) { res.writeHead(404); res.end(); return; }
@@ -87,75 +136,111 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
       let command;
       try {
         command = JSON.parse(bytes.toString());
+        if (!command || typeof command !== 'object' || typeof command.type !== 'string') throw new Error('Invalid command');
         if (!ws.authed) {
           if (command.type !== 'auth' || !authenticated(command.token)) { ws.close(1008, 'Invalid pairing token'); return; }
           ws.authed = true; clearTimeout(deadline); clients.add(ws);
-          send(ws, { type: 'hello', version: '1.0.0', root, sessions: [...sessions.values()].map(summary) }); return;
+          send(ws, { type: 'hello', version: VERSION, root, agents: catalog(), lanUrl: lanAddress(originFor(req)), apkAvailable: existsSync(apkPath), sessions: [...sessions.values()].map(summary) }); return;
         }
-        const result = await handle(command); send(ws, { type: 'response', id: command.id, ok: true, data: result });
+        const result = await handle(command, { origin: originFor(req) });
+        send(ws, { type: 'response', id: command.id, ok: true, data: result });
       } catch (e) { send(ws, { type: 'response', id: command?.id, ok: false, error: e.message }); }
     });
   });
-  async function handle(c) {
+  async function handle(c, context = {}) {
     if (c.type === 'list') return [...sessions.values()].map(summary);
+    if (c.type === 'agents') return catalog();
     if (c.type === 'pair') {
-      const url = advertisedUrl || `http://127.0.0.1:${server.address().port}`;
+      const url = lanAddress(context.origin), browserUrl = `${url}/#token=${encodeURIComponent(token)}`;
       const payload = JSON.stringify({ version: 1, url, token });
-      return { url, token, qr: await QRCode.toDataURL(payload), payload };
+      return { url, token, qr: await QRCode.toDataURL(payload), payload, browserUrl, webQr: await QRCode.toDataURL(browserUrl) };
     }
     if (c.type === 'create') {
-      if (!['pi', 'codex'].includes(c.agent)) throw new Error('Choose pi or codex');
-      if ([...sessions.values()].filter(s => s.agent && !s.agent.closed).length >= 8) throw new Error('Maximum 8 active sessions');
-      const s = { id: randomUUID(), kind: c.agent, title: clipped(c.title || `${c.agent} · ${new Date().toLocaleTimeString()}`).slice(0, 120), cwd: validCwd(c.cwd), status: 'starting', models: [], model: '', events: [], seq: 0, choices: new Map(), busy: true, tools: 0, turns: 0 };
-      sessions.set(s.id, s); broadcast({ type: 'sessions', sessions: [...sessions.values()].map(summary) });
+      if (!['pi', 'codex'].includes(c.agent)) throw new Error('请选择 pi 或 codex');
+      if (!catalog().find(a => a.id === c.agent)?.available) throw new Error(`Linux 服务上未找到 ${c.agent}，请先安装该 CLI 并登录`);
+      if ([...sessions.values()].filter(s => s.agent && !s.agent.closed).length >= 8) throw new Error('最多 8 个运行中的 agent，请先关闭或删除不用的会话');
+      const title = typeof c.title === 'string' && c.title.trim() ? c.title.trim().slice(0, 120) : `${c.agent} · ${new Date().toLocaleTimeString()}`;
+      const s = { id: randomUUID(), kind: c.agent, title, cwd: validCwd(c.cwd), status: 'starting', models: [], model: '', events: [], seq: 0, choices: new Map(), initialized: false, busy: true, tools: 0, turns: 0 };
+      sessions.set(s.id, s); save(); broadcastSessions();
       try {
         s.agent = agentFactory ? agentFactory(s.kind, s.cwd, (type, data) => event(s, type, data)) : new (s.kind === 'pi' ? PiAgent : CodexAgent)(s.cwd, (type, data) => event(s, type, data));
-        const info = await s.agent.init(); s.models = info.models; s.model = info.model; s.status = 'idle'; save();
-        event(s, 'status', { status: 'idle' }); return snapshot(s);
-      } catch (e) { s.agent?.close(); event(s, 'error', { text: e.message, fatal: true }); save(); throw e; }
-      finally { s.busy = false; }
+        const info = await s.agent.init();
+        if (s.deleted) throw new Error('会话已被删除');
+        s.models = info.models; s.model = info.model; s.initialized = true;
+        if (c.model) {
+          if (!s.models.some(m => m.id === c.model)) throw new Error('所选模型不在该 agent 的可用列表中');
+          await s.agent.model(c.model); s.model = c.model;
+        }
+        save(); event(s, 'status', { status: 'idle' }); return snapshot(s);
+      } catch (e) {
+        await s.agent?.close();
+        if (!s.deleted) { event(s, 'error', { text: e.message, fatal: true }); save(); }
+        throw e;
+      } finally { s.busy = false; }
     }
-    const s = sessions.get(c.sessionId); if (!s) throw new Error('Session not found');
+    const s = sessions.get(c.sessionId); if (!s) throw new Error('会话不存在，可能已在另一端删除');
     if (c.type === 'subscribe') return snapshot(s);
-    if (c.type === 'close') { if (s.busy) throw new Error('Session is processing a command'); s.agent?.close(); s.agent = null; for (const requestId of s.choices.keys()) event(s, 'choice_closed', { requestId }); event(s, 'status', { status: 'offline' }); save(); return summary(s); }
-    if (!s.agent || s.agent.closed) throw new Error('Session offline; create a new session to continue');
+    if (c.type === 'rename') {
+      if (typeof c.title !== 'string' || !c.title.trim() || c.title.trim().length > 120) throw new Error('会话名称须为 1–120 个字符');
+      s.title = c.title.trim(); save(); broadcastSessions(); return summary(s);
+    }
+    if (c.type === 'delete') {
+      s.deleted = true; sessions.delete(s.id);
+      try { save(); } catch (e) { s.deleted = false; sessions.set(s.id, s); throw e; }
+      await s.agent?.close(); s.agent = null; s.choices.clear();
+      rmSync(resolve(dataDir, `${s.id}.jsonl`), { force: true });
+      broadcast({ type: 'session_deleted', sessionId: s.id }); broadcastSessions();
+      return { deleted: true, sessionId: s.id };
+    }
+    if (c.type === 'close') {
+      if (s.busy) throw new Error('会话正在处理命令，可以先停止任务或选择删除会话');
+      await s.agent?.close(); s.agent = null;
+      for (const requestId of s.choices.keys()) event(s, 'choice_closed', { requestId });
+      event(s, 'status', { status: 'offline' }); save(); return summary(s);
+    }
+    if (!s.agent || s.agent.closed || !s.initialized) throw new Error('会话进程未就绪或已停止，请新建会话；历史仍可查看');
     if (c.type === 'abort') { await s.agent.abort(); return {}; }
-    // A Pi extension command can await UI before its prompt response. Answers must bypass that command lock.
+    // UI answers must bypass the pending prompt lock (Pi commands can await a dialog).
     if (c.type === 'answer') {
-      if (!s.choices.has(c.requestId)) throw new Error('Request expired or already answered');
+      if (!s.choices.has(c.requestId)) throw new Error('请求已过期或已回答');
       await s.agent.answer(c.requestId, c.answer || {}); event(s, 'choice_closed', { requestId: c.requestId }); return {};
     }
-    if (s.busy) throw new Error('Previous command is still being processed');
+    if (s.busy) throw new Error('上一条命令仍在处理，请稍后');
     s.busy = true;
     try {
       if (c.type === 'prompt') {
-        if (['running', 'waiting', 'starting'].includes(s.status)) throw new Error('Wait for completion or stop the current task first');
-        if (typeof c.text !== 'string' || !c.text.trim() || c.text.length > 100000) throw new Error('Message must contain 1–100000 characters');
+        if (['running', 'waiting', 'starting'].includes(s.status)) throw new Error('任务仍在运行，请等待完成或先停止');
+        if (typeof c.text !== 'string' || !c.text.trim() || c.text.length > 100000) throw new Error('消息须包含 1–100000 个字符');
         event(s, 'user', { text: c.text }); event(s, 'status', { status: 'running' });
-        try { await s.agent.prompt(c.text); } catch (e) { event(s, 'error', { text: e.message }); event(s, 'status', { status: 'error' }); throw e; }
+        try { await s.agent.prompt(c.text); }
+        catch (e) { if (!s.deleted) { event(s, 'error', { text: e.message }); event(s, 'status', { status: 'error' }); } throw e; }
         return {};
       }
       if (c.type === 'model') {
-        if (['running', 'waiting'].includes(s.status)) throw new Error('Cannot switch model during a task');
-        if (!s.models.some(m => m.id === c.model)) throw new Error('Model is not in the available model list');
+        if (['running', 'waiting'].includes(s.status)) throw new Error('任务运行中不能切换模型，请先停止或等待完成');
+        if (!s.models.some(m => m.id === c.model)) throw new Error('所选模型不在该 agent 的可用列表中');
         await s.agent.model(c.model); s.model = c.model; save(); event(s, 'model', { model: s.model }); return summary(s);
       }
       throw new Error('Unknown command');
     } finally { s.busy = false; }
   }
   const heartbeat = setInterval(() => { for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; ws.ping(); } }, 25000); heartbeat.unref();
-  return { server, sessions, token, handle, async close() { clearInterval(heartbeat); for (const s of sessions.values()) s.agent?.close(); for (const ws of wss.clients) ws.terminate(); await new Promise(r => wss.close(r)); await new Promise(r => server.close(r)); } };
+  return { server, sessions, token, handle, async close() { clearInterval(heartbeat); await Promise.all([...sessions.values()].map(s => s.agent?.close())); for (const ws of wss.clients) ws.terminate(); await new Promise(r => wss.close(r)); await new Promise(r => server.close(r)); } };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = resolve(process.env.AGENT_ROOT || process.cwd());
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '0.0.0.0';
-  const advertisedUrl = process.env.LAN_URL || `http://127.0.0.1:${port}`;
+  const advertisedUrl = process.env.LAN_URL;
   const bridge = createBridge({ root, dataDir: resolve(process.env.DATA_DIR || resolve(root, '.lan-agent')), token: process.env.PAIR_TOKEN, advertisedUrl });
   bridge.server.listen(port, host, async () => {
-    console.log(`\nLAN Agent · root ${root}\n电脑面板: http://localhost:${port}\n手机连接: ${advertisedUrl}\n配对码: ${bridge.token}\n只在可信局域网使用；不要将端口暴露到公网。`);
-    if (!process.env.LAN_URL) console.log('设置 LAN_URL=http://Windows局域网IP:8787，二维码才可从手机访问。');
-    console.log(await QRCode.toString(JSON.stringify({ version: 1, url: advertisedUrl, token: bridge.token }), { type: 'terminal', small: true }));
+    const url = advertisedUrl || linuxLanUrl(bridge.server.address().port);
+    console.log(`\nLAN Agent ${VERSION} · Linux Web\n项目根目录: ${root}\n本机网页: http://localhost:${bridge.server.address().port}/#token=${encodeURIComponent(bridge.token)}\n电脑/手机网址: ${url}\n登录配对码: ${bridge.token}\n下面二维码可直接打开手机网页，不需要 APK。仅在可信局域网使用。`);
+    console.log(await QRCode.toString(`${url}/#token=${encodeURIComponent(bridge.token)}`, { type: 'terminal', small: true }));
   });
+  serverErrors(bridge.server);
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { await bridge.close(); process.exit(0); });
+}
+function serverErrors(server) {
+  server.on('error', e => { console.error(`Linux Web 服务启动失败：${e.message}`); process.exitCode = 1; });
 }

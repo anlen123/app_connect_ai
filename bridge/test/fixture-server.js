@@ -19,6 +19,7 @@ const factory = (kind, cwd, emit) => ({
   async abort() { clearTimeout(this.timer); emit('completed', { status: 'cancelled' }); },
   close() { clearTimeout(this.timer); this.closed = true; }
 });
-const b = createBridge({ root: mkdtempSync(join(tmpdir(), 'lan-fixture-')), token: 'test-only-token-0123456789abcdefgh', quiet: true, advertisedUrl: 'http://10.0.2.2:8788', agentFactory: factory });
-b.server.listen(8788, '0.0.0.0', () => console.log('Fixture listening 8788'));
+const b = createBridge({ root: mkdtempSync(join(tmpdir(), 'lan-fixture-')), token: 'test-only-token-0123456789abcdefgh', quiet: true, advertisedUrl: process.env.LAN_URL, agentFactory: factory });
+const port = Number(process.env.PORT || 8788);
+b.server.listen(port, '0.0.0.0', () => console.log(`Fixture listening ${port}`));
 process.on('SIGTERM', async () => { await b.close(); process.exit(); });

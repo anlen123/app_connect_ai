@@ -24,7 +24,17 @@ public final class Pairing {
         this.url = normalized.replaceAll("/+$", ""); this.token = token.trim();
     }
     public static Pairing parse(String qr) throws Exception {
-        JSONObject obj = new JSONObject(qr);
+        String raw = qr.trim();
+        if (!raw.startsWith("{")) {
+            URI uri = URI.create(raw); String fragment = uri.getRawFragment(), token = null;
+            if (fragment != null) for (String field : fragment.split("&")) {
+                String[] parts = field.split("=",2);
+                if (parts.length == 2 && parts[0].equals("token")) token = java.net.URLDecoder.decode(parts[1],"UTF-8");
+            }
+            if (token == null) throw new IllegalArgumentException("二维码不是 LAN Agent 网页连接地址");
+            return new Pairing(raw.substring(0,raw.indexOf('#')),token);
+        }
+        JSONObject obj = new JSONObject(raw);
         if (obj.optInt("version") != 1) throw new IllegalArgumentException("不支持的二维码版本");
         return new Pairing(obj.getString("url"), obj.getString("token"));
     }

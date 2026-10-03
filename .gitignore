@@ -11,3 +11,4 @@ android/local.properties
 artifacts/*.apk
 artifacts/*.zip
 artifacts/deployment.json
+WORK_STATE.md

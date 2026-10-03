@@ -17,6 +17,7 @@ import java.util.function.BooleanSupplier;
 public class EndToEndTest {
     private UiDevice device;
     private Context context;
+    private final String fixtureUrl = InstrumentationRegistry.getArguments().getString("fixtureUrl","http://10.0.2.2:8788");
     private void until(BooleanSupplier condition) throws Exception { long end = System.currentTimeMillis()+15000; while(System.currentTimeMillis()<end) { if(condition.getAsBoolean()) return; Thread.sleep(100); } fail("Condition timed out"); }
     private <T> T onMain(java.util.concurrent.Callable<T> action) { AtomicReference<T> out=new AtomicReference<>(); AtomicReference<Exception> error=new AtomicReference<>(); InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> { try { out.set(action.call()); } catch(Exception e) {error.set(e);} }); if(error.get()!=null) throw new RuntimeException(error.get()); return out.get(); }
     private JSONObject command(String type, JSONObject fields) throws Exception {
@@ -36,7 +37,7 @@ public class EndToEndTest {
     }
     @Test public void manualIpChatThinkingModelsChoicesAndBackgroundNotifications() throws Exception {
         List<UiObject2> fields=device.findObjects(By.clazz(EditText.class)); assertEquals(2,fields.size());
-        fields.get(0).setText("http://10.0.2.2:8788"); fields.get(1).setText("test-only-token-0123456789abcdefgh"); device.findObject(By.text("连接电脑 ↗")).click();
+        fields.get(0).setText(fixtureUrl); fields.get(1).setText("test-only-token-0123456789abcdefgh"); device.findObject(By.text("连接电脑 ↗")).click();
         until(() -> onMain(() -> AgentService.current != null && AgentService.current.connection.startsWith("●")));
         int before = onMain(() -> AgentService.current.sessions.length());
         assertTrue(device.wait(Until.hasObject(By.text("＋")),5000)); device.findObject(By.text("＋")).click();
@@ -73,9 +74,16 @@ public class EndToEndTest {
         int width=bitmap.getWidth(),height=bitmap.getHeight();int[] pixels=new int[width*height];bitmap.getPixels(pixels,0,width,0,0,width,height);
         var binary=new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(new com.google.zxing.RGBLuminanceSource(width,height,pixels)));
         String payload=new com.google.zxing.qrcode.QRCodeReader().decode(binary).getText();
-        Pairing qr=Pairing.parse(payload); assertEquals("http://10.0.2.2:8788",qr.url);
+        Pairing qr=Pairing.parse(payload); assertEquals(fixtureUrl,qr.url);
+        Pairing web=Pairing.parse(paired.getString("browserUrl")); assertEquals(qr.url,web.url); assertEquals(qr.token,web.token);
         onMain(() -> { qr.save(context);return null; }); assertEquals(qr.token,Pairing.load(context).token);
         try { Pairing.parse("{\"version\":2}"); fail("bad QR accepted"); } catch(Exception expected) { }
+        device.findObject(By.text("⋯")).click(); assertTrue(device.wait(Until.hasObject(By.text("删除会话")),5000)); device.findObject(By.text("删除会话")).click();
+        assertTrue(device.wait(Until.hasObject(By.text("删除")),5000)); device.findObject(By.text("删除")).click();
+        until(() -> onMain(() -> !AgentService.current.events.containsKey(id)));
+        assertFalse(java.util.Arrays.stream(context.getSystemService(NotificationManager.class).getActiveNotifications()).anyMatch(n -> n.getTag()!=null && n.getTag().startsWith(id+":")));
+        command("delete",new JSONObject().put("sessionId",codex.getString("id")));
+        assertTrue(device.wait(Until.hasObject(By.text("新建一个会话开始")),5000));
     }
     @Test public void scannerOpensCameraAndReturnsSafely() throws Exception {
         device.executeShellCommand("pm grant dev.lanagent android.permission.CAMERA");

@@ -60,7 +60,7 @@ public class MainActivity extends Activity implements AgentService.Listener {
         TextView brand = text("L↗A", 54, ACID); brand.setTypeface(Typeface.create("serif", Typeface.BOLD_ITALIC)); root.addView(brand);
         root.addView(text("LAN AGENT / 移动控制室", 12, MUTED));
         TextView heading = text("工作在电脑。\n掌控在手边。", 32, INK); heading.setTypeface(Typeface.create("serif", Typeface.NORMAL)); root.addView(heading);
-        root.addView(text("同一局域网连接 WSL 的 pi / Codex。\n二维码和配对码包含访问权限，请勿分享。", 14, MUTED));
+        root.addView(text("连接 Linux 网页服务，与电脑/手机网页共享 pi / Codex 会话。\n二维码和配对码包含访问权限，请勿分享。", 14, MUTED));
         urlInput = input("http://192.168.1.10:8787", false); urlInput.setSingleLine(true); root.addView(urlInput);
         tokenInput = input("终端显示的配对码（不是 API key）", true); tokenInput.setSingleLine(true); LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2); p.topMargin = dp(12); root.addView(tokenInput,p);
         Pairing saved = Pairing.load(this); if (saved != null) { urlInput.setText(saved.url); tokenInput.setText(saved.token); }
@@ -91,7 +91,7 @@ public class MainActivity extends Activity implements AgentService.Listener {
         });
         title = text("新建一个会话开始",18,INK); root.addView(title);
         status = text("对话、思考和工具进度实时同步",12,MUTED); root.addView(status);
-        LinearLayout tools = row(); modelLabel = text("模型",12,ACID); modelLabel.setMaxLines(2); modelLabel.setEllipsize(android.text.TextUtils.TruncateAt.END); modelLabel.setOnClickListener(v -> switchModel()); tools.addView(modelLabel,new LinearLayout.LayoutParams(0,-2,1)); tools.addView(button("停止", v -> call("abort",new JSONObject(),(d,e) -> { if (e != null) error(e); }))); tools.addView(button("⋯", v -> new AlertDialog.Builder(this).setTitle("关闭会话？").setMessage("停止此 agent 进程；历史记录仍可查看。运行中的任务请先停止。").setNegativeButton("取消",null).setPositiveButton("关闭会话",(d,w) -> call("close",new JSONObject(),(data,e) -> { if (e != null) error(e); })).show())); root.addView(tools);
+        LinearLayout tools = row(); modelLabel = text("模型",12,ACID); modelLabel.setMaxLines(2); modelLabel.setEllipsize(android.text.TextUtils.TruncateAt.END); modelLabel.setOnClickListener(v -> switchModel()); tools.addView(modelLabel,new LinearLayout.LayoutParams(0,-2,1)); tools.addView(button("停止", v -> call("abort",new JSONObject(),(d,e) -> { if (e != null) error(e); }))); tools.addView(button("⋯", v -> sessionActions())); root.addView(tools);
         scroll = new ScrollView(this); LinearLayout content = column(); choiceArea = column(); timeline = column(); content.addView(choiceArea); content.addView(timeline); scroll.addView(content); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout composer = row(); prompt = input("输入任务或回复…",false); prompt.setMinLines(1); prompt.setMaxLines(4); prompt.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         composer.addView(prompt,new LinearLayout.LayoutParams(0,-2,1)); send = button("发送 ↗", v -> {
@@ -114,6 +114,7 @@ public class MainActivity extends Activity implements AgentService.Listener {
         ArrayList<String> ids = new ArrayList<>(), labels = new ArrayList<>();
         for (int i = 0; i < service.sessions.length(); i++) { JSONObject s = service.sessions.optJSONObject(i); ids.add(s.optString("id")); labels.add(s.optString("agent").toUpperCase(Locale.ROOT) + " / " + s.optString("title")); }
         if (wanted != null && ids.contains(wanted)) { selected = wanted; wanted = null; resetTimeline(); }
+        if (selected != null && !ids.contains(selected)) { selected = null; resetTimeline(); prompt.setText(""); }
         if (selected == null && !ids.isEmpty()) { selected = ids.get(ids.size()-1); resetTimeline(); }
         rendering = true;
         if (!ids.equals(sessionIds) || sessionPicker.getAdapter() == null) {
@@ -123,9 +124,9 @@ public class MainActivity extends Activity implements AgentService.Listener {
         if (ids.contains(selected)) sessionPicker.setSelection(ids.indexOf(selected));
         // Spinner selection callbacks can be deferred to the next layout.
         main.post(() -> rendering = false);
-        JSONObject s = active(); if (s == null) return;
+        JSONObject s = active(); if (s == null) { title.setText("新建一个会话开始"); status.setText("与 Linux 网页共享会话；点击 ＋ 选择 agent"); modelLabel.setText("模型"); send.setEnabled(false); return; }
         title.setText(s.optString("title")); String phase = s.optString("status"); status.setText(phase + " · " + s.optInt("turns") + " 轮 · " + s.optInt("tools") + " 工具\n" + s.optString("cwd")); modelLabel.setText(s.optString("model") + " ▾");
-        send.setEnabled(!Arrays.asList("running","waiting","starting","offline").contains(phase));
+        send.setEnabled(s.optBoolean("ready",!phase.equals("offline")) && !Arrays.asList("running","waiting","starting","offline").contains(phase));
         renderChoices(service.choices.get(selected));
         ArrayList<JSONObject> all = service.events.get(selected);
         if (all == null) return;
@@ -180,9 +181,17 @@ public class MainActivity extends Activity implements AgentService.Listener {
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1,-2); p.bottomMargin=dp(12); choiceArea.addView(card,p);
         }
     }
+    private void sessionActions() {
+        if (active() == null) { error("请先选择会话"); return; }
+        final String target = selected;
+        new AlertDialog.Builder(this).setTitle("会话操作").setItems(new String[]{"关闭进程（保留历史）","删除会话"},(dialog,index) -> {
+            if (index == 0) call("close",object("sessionId",target),(data,e) -> { if (e != null) error(e); });
+            else new AlertDialog.Builder(this).setTitle("删除会话？").setMessage("将停止该 agent 并删除本服务的聊天记录，网页和 APP 同步移除，不能撤销。").setNegativeButton("保留",null).setPositiveButton("删除",(d,w) -> call("delete",object("sessionId",target),(data,e) -> { if (e != null) error(e); })).show();
+        }).show();
+    }
     private JSONObject object(String key, Object value) { JSONObject obj = new JSONObject(); AgentService.put(obj,key,value); return obj; }
     private void answer(JSONObject choice, JSONObject answer) { JSONObject p = object("requestId",choice.optString("requestId")); AgentService.put(p,"answer",answer); call("answer",p,(d,e) -> { if (e != null) error(e); }); }
-    private void call(String type, JSONObject p, AgentService.Callback cb) { if (AgentService.current == null) { cb.done(null,"尚未连接"); return; } if (selected != null) AgentService.put(p,"sessionId",selected); AgentService.current.command(type,p,cb); }
+    private void call(String type, JSONObject p, AgentService.Callback cb) { if (AgentService.current == null) { cb.done(null,"尚未连接"); return; } if (selected != null && !p.has("sessionId")) AgentService.put(p,"sessionId",selected); AgentService.current.command(type,p,cb); }
     private void createSession() {
         LinearLayout form = column(); form.setPadding(dp(20),dp(12),dp(20),0); Spinner agent = new Spinner(this); agent.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"pi","codex"})); form.addView(agent); EditText cwd = input("项目目录（桥接根目录内）",false); cwd.setText("."); form.addView(cwd);
         AlertDialog d = new AlertDialog.Builder(this).setTitle("新建会话").setView(form).setNegativeButton("取消",null).setPositiveButton("创建",null).create(); d.setOnShowListener(x -> d.getButton(-1).setOnClickListener(v -> {
@@ -191,7 +200,7 @@ public class MainActivity extends Activity implements AgentService.Listener {
         })); d.show();
     }
     private void switchModel() {
-        JSONObject s = active(); if (s == null) return; if (Arrays.asList("running","waiting","starting","offline").contains(s.optString("status"))) { error("任务结束后才能切换模型"); return; }
+        JSONObject s = active(); if (s == null) return; if (!s.optBoolean("ready",!s.optString("status").equals("offline")) || Arrays.asList("running","waiting","starting","offline").contains(s.optString("status"))) { error("任务结束后才能切换模型"); return; }
         JSONArray models = s.optJSONArray("models"); if (models == null || models.length()==0) { error("没有可用模型，请检查电脑端登录配置"); return; }
         String[] names = new String[models.length()]; int checked=0;
         for (int i=0;i<names.length;i++) { JSONObject m = models.optJSONObject(i); names[i]=m.optString("name"); if (m.optString("id").equals(s.optString("model"))) checked=i; }

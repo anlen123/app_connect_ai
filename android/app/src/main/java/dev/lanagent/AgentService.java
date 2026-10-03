@@ -28,6 +28,7 @@ public class AgentService extends Service {
     private final Map<String, Runnable> deadlines = new HashMap<>();
     private final Map<String, Long> cursors = new HashMap<>();
     private final Set<String> hydrating = new HashSet<>();
+    private final Set<String> deletedSessions = new HashSet<>();
     private NotificationManager notifications;
     private static final String MONITOR = "monitor", ALERT = "task-alerts";
 
@@ -92,11 +93,19 @@ public class AgentService extends Service {
         } else if (type.equals("sessions")) {
             sessions = r.getJSONArray("sessions");
             for (int i = 0; i < sessions.length(); i++) { String id = sessions.getJSONObject(i).getString("id"); if (!events.containsKey(id)) subscribe(id); } update();
+        } else if (type.equals("session_deleted")) {
+            String id = r.getString("sessionId"); deletedSessions.add(id); events.remove(id); choices.remove(id); hydrating.remove(id); cursors.remove(id);
+            getSharedPreferences("cursors",0).edit().remove(cursorKey(id)).apply();
+            JSONArray remaining = new JSONArray();
+            for (int i=0;i<sessions.length();i++) { JSONObject s=sessions.optJSONObject(i); if (!id.equals(s.optString("id"))) remaining.put(s); }
+            sessions = remaining;
+            for (var notification : notifications.getActiveNotifications()) { String tag = notification.getTag(); if (tag != null && tag.startsWith(id+":")) notifications.cancel(tag,notification.getId()); }
+            update();
         } else if (type.equals("response")) {
             String id = r.optString("id"); Callback cb = callbacks.remove(id); Runnable deadline = deadlines.remove(id); if (deadline != null) main.removeCallbacks(deadline);
             if (cb != null) cb.done(r.optJSONObject("data"), r.optBoolean("ok") ? null : r.optString("error", "请求失败"));
         } else if (type.equals("event")) {
-            String id = r.getString("sessionId"); long seq = r.getLong("seq");
+            String id = r.getString("sessionId"); if (deletedSessions.contains(id)) return; long seq = r.getLong("seq");
             ArrayList<JSONObject> list = events.computeIfAbsent(id, k -> new ArrayList<>());
             if (list.isEmpty() || seq > list.get(list.size() - 1).optLong("seq")) { list.add(r); if (list.size() > 10000) list.remove(0); applyChoice(id, r); }
             if (!hydrating.contains(id)) notifyIfNew(id, r, false); update();
@@ -108,6 +117,7 @@ public class AgentService extends Service {
         JSONObject p = new JSONObject(); put(p, "sessionId", id);
         command("subscribe", p, (data, error) -> {
             hydrating.remove(id);
+            if (deletedSessions.contains(id)) return;
             if (error != null) { report(error); return; }
             try {
                 JSONArray history = data.getJSONArray("events"); ArrayList<JSONObject> merged = new ArrayList<>();

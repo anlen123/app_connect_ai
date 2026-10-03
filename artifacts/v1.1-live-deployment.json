@@ -1,0 +1,26 @@
+{
+  "version": "1.1.0",
+  "endpoint": "existing Linux LAN HTTP service :8787",
+  "userSessionsPreserved": true,
+  "pass": true,
+  "scenarios": [
+    {
+      "agent": "pi",
+      "viewport": "desktop",
+      "realModelInference": true,
+      "readOnlyTools": true,
+      "reloadHistory": true,
+      "delete": true,
+      "pass": true
+    },
+    {
+      "agent": "codex",
+      "viewport": "phone",
+      "realModelInference": true,
+      "readOnlyTools": true,
+      "reloadHistory": true,
+      "delete": true,
+      "pass": true
+    }
+  ]
+}

@@ -1,62 +1,59 @@
-# 验证与需求审计
+# v1.1.0 验证记录
 
-验证日期：2026-10-02。所有下列通过结果均来自执行结果，而非仅检查源代码。Release APK 是本次测试构建的同一份文件。公开记录已脱敏测试电脑的地址及本机项目路径；配对参数也已脱敏。
+验证日期：**2026-10-03**。本次要求是普通 Linux 网页，电脑和手机访问同一服务完成 agent/新会话/模型/删除操作。没有以 `/health`、localhost 浏览器或假 agent 成功替代真实端到端验证。
 
-## 逐项对照
+## v1.0.0 故障与修复
 
-| 需求 | 实现与证据 | 结果 |
+非 localhost 的普通 HTTP 来源中 `isSecureContext=false`，`crypto.randomUUID` 未定义。旧版创建命令时调用它，导致登录后仍无法正常使用。旧浏览器测试只在 localhost 跑，漏掉该条件。
+
+v1.1.0 改用不依赖安全来源的请求 ID；重写响应式会话操作，修复删除后空态 DOM 引用；新增真正删除 API、并发删除保护、进程退出等待、手机直接进入网页的二维码及错误反馈。启动流程独立于 Windows/WSL。
+
+## 本次执行结果
+
+| 验证 | 实际结果 | 范围与限制 |
 |---|---|---|
-| 安卓 APP | 原生 Java APK，Android 8.0+，compile/target SDK 35；Android 15 x86_64 模拟器运行 | 通过 |
-| 经局域网连接 Windows WSL | Windows 局域网 IP 的 8787 端口 NAT portproxy 到 WSL；Windows/WSL HTTP health；Android `RealAgentTest` 使用该 Windows LAN IP，而非 localhost | 通过 |
-| pi | 真正的持久 RPC 子进程；真实模型列表、对话、工具调用、模型切换、`/lan-check` 选择回传 | 通过 |
-| Codex | 真正的 app-server stdio 子进程；initialize/thread/turn/model API；真实模型列表、对话、工具调用、模型切换 | 通过 |
-| APP 对话输入与输出 | UIAutomator 实际填写输入框并发送，流式呈现；真实 Android → pi/Codex 都收到 `LAN_ANDROID_OK` | 通过 |
-| 思考信息 | pi thinking delta/final、Codex reasoning delta/summary 映射单测；APP 显示确定性测试 agent 的流式 thinking 事件，截图 `lan-chat.png`；最终权威内容覆盖 delta，未显示签名 | 通过（公开内容边界见下） |
-| QR 或 IP | APP 手动 IP/配对码连接；电脑生成实际 QR 位图，Android ZXing 解码、Pairing.parse、加密保存回读；相机扫码 Activity 实际启动和返回 | 通过 |
-| APP 切换模型 | UI 从 Model A 切换至 B；真实 pi 和 Codex 均切到另一个真实可用模型再恢复，返回模型标识核验 | 通过 |
-| 电脑任务进度 | Playwright 电脑面板创建 Codex 会话/任务、实时计划/工具/等待状态/完成；APP 与电脑共享桥接会话，WSL 终端显示任务事件 | 通过 |
-| 完成系统通知 | Android 后台时 NotificationManager 与真实系统通知栏核验、点击跳回对应会话；真实 pi/Codex 完成都产生完成通知 | 通过 |
-| 要选择时系统通知 | UIAutomator 检查系统“需要你的选择”，点击通知显示选择卡片，真实点击并回传；真实 pi 的 RPC dialog 经 Windows IP 到 Android 也验证通知和回传 | 通过 |
-| 断线与历史 | Android 主动中断实际 WebSocket，在离线间隙完成任务，重连回放后系统完成通知；桥接重启恢复历史、明确 offline | 通过 |
+| `npm test` | **13/13** | 鉴权/Origin、模型/消息/思考映射、重命名/关闭/删除/重启、删除中的初始化/运行/晚到回调、路径和二维码；使用确定性 agent 单元测试 |
+| `npx playwright test` | **8/8** | 桌面和 Pixel5 手机视口；真实 Linux 网卡 HTTP 地址；两 agent 创建/聊天/模型/重命名/刷新/删除/空态、跨端同步、扫码链接、错误反馈；此组使用 fixture agent |
+| `node --test test/real-web.live.js` | **5 个真实场景全通过**（TAP 含父测试 6/6） | **真实 pi/Codex CLI，无 mock**；桌面×手机视口×两 agent；真实工具读随机上下文、切换另一模型后实际推理且保留上下文；第二问不泄漏待复述的随机上下文，且无新增读文件工具；真实 pi 选择在另一端回答；重命名/刷新/跨端删除；额外真实运行中 Codex sleep 任务删除 |
+| `node test/android-browser.live.js` | **真实 Android Chrome 的 pi/Codex 两场景均通过** | Android15 x86_64 模拟器上的实际 Chrome124（不是仅桌面移动仿真）；真实触摸、LAN HTTP、网页扫码链接登录、选 agent/新建、切到 gpt-6-sol 后真实工具/回复、删除与进程退出/日志移除；无水平溢出 |
+| `node test/deployment.live.js` | **运行中的 Linux :8787 服务两场景通过** | 升级后的实际服务（不是临时 fixture）：桌面 pi / 手机视口 Codex，真实模型切换/工具/回复、reload历史、删除；升级前已有会话全部保留，测试只删除自身新建会话 |
+| Android `assembleDebug` / `lintDebug` / `EndToEndTest` | **BUILD SUCCESSFUL；2/2，0 skipped** | 新版 APK 的实际 Java/UIAutomator 网络/模型/聊天/公开思考、完成/选择通知与跳转、重连回放、相机启动、QR 位图解码、JSON/网页二维码解析、删除通知清理与空态；agent 为独立 fixture |
+| `apksigner verify` | **通过** | 同一份新版 debug APK；不是商店 release 签名 |
+| `npm audit --omit=dev` | **0 漏洞** | 生产依赖，见版本化 JSON 记录 |
 
-模型提供方并不保证返回全部内部思考。本次真实 gpt-6.1-sol 冒烟返回了文本/工具，但未返回公开思考（`real-agent-smoke.json` 的 thinking=0）。APP 转发所有公开思考/摘要；协议流、权威最终内容与 APP 思考呈现已分别测试，不伪造提供方隐藏的内容。pi 支持时默认 medium thinking，Codex 请求公开推理摘要。
+以上 HTTP 浏览器测试都确认安全来源为 false、`crypto.randomUUID` 为 undefined。没有强制将 HTTP 视为安全来源、没有 monkeypatch 该 API，也没有模拟真实 agent 的成功回复。
 
-实体手机、不同厂商强制省电和实际相机对准屏幕的光学扫码条件未声称已实测。已测试实际 Android 系统上的网络、界面、相机启动、二维码位图解码、后台服务、权限和通知。IP 连接已端到端覆盖，手机可直接使用该已验证链路。
+## 自动化同步问题的处理
 
-## 执行结果
+真实浏览器门禁早期发现测试错误等待了上一轮“已完成”，以及读取了异步配对弹窗尚未填入的 URL。已改成先等待该轮独有回复、再等待完成，以及等二维码对话框可见后读取，最后完整真实门禁退出码为 0。
 
-- `npm test`：**7/7 通过**。鉴权/跨域拒绝、模型、对话、thinking、选择、完成、回放、路径越界拒绝、UTF-8 JSONL 分帧、pi settled/retry、Codex 审批/问题/计划。
-- `node test/real-smoke.js`：**pi 与 Codex 均通过**，真实只读工具调用，完成状态和 `LAN_SMOKE_OK`；模型数分别 455 和 8。
-- `node test/real-interaction.js`：**通过**，真实 pi RPC `/lan-check` 对话、prompt 仍等待时提交答案、收到选择结果并完成。
-- `npx playwright test`：**2/2 通过**，电脑面板全流程及 launcher fragment 登录、HTTP URL 不泄漏配对码。
-- `:app:assembleDebug :app:lintDebug`：**BUILD SUCCESSFUL**，lint 无错误。保留的非阻塞警告包括更新版本建议和部分 UI 文案国际化建议。
-- Android `EndToEndTest`：**2/2 通过**，输入/模型/公开思考、前后台通知、选择跳转回传、断线通知回放、QR 解码、相机打开。
-- Android `RealAgentTest`：**1/1 通过，0 skipped**，真实 Windows LAN → WSL → pi/Codex 对话/工具/模型切换/后台通知；真实 pi 待选择交互也覆盖。
-- `apksigner verify`：**通过**，Android Debug 签名；没有宣称为应用商店 release 签名。
-- Windows PowerShell 对部署/launcher 脚本 AST 检查：**0 syntax errors**；NAT 部署脚本已实际执行。
-- Windows 防火墙核验：LocalAddress 为指定局域网 IP，`RemoteAddress=LocalSubnet`。
-- Windows 经局域网地址 `/app.apk` 下载的 APK 与构建产物 SHA-256 **一致**。
-- 最终依赖审计：见 `artifacts/npm-audit.json`。
-- LSP 检查：7 个文件中 4 个确认无错误，3 个 push-only 检查无法单独确认；没有用静默结果冒充全部干净。Java 编译/lint、实际 Pi TS extension 加载、JS 运行测试提供补充验证。
+实际 Android Chrome 冷启动时，系统在 boot-complete 后更新全局资源覆盖层并重建 Activity/标签，导致调试连接失效。等待系统初始化稳定后，使用 Playwright Android 接口和触摸输入，两实际场景通过。这不是通过强制安全来源绕过网页错误。
 
-## APK
+## 诚实边界
 
-- 文件：[Release 附件 lan-agent-1.0.0.apk](https://github.com/anlen123/app_connect_ai/releases/download/v1.0.0/lan-agent-1.0.0.apk)（二进制不存入 Git 历史）
-- 包名：`dev.lanagent`
-- 版本：`1.0.0` / versionCode 1
-- 大小：4,720,608 字节
-- SHA-256：`45a60de384c22f2a94ce8d3204e295b66d25d8df00fe37da673e319aa32b57d9`
-- Release 安装包与本机已验证的安装包 SHA-256 相同。
+- 真实浏览器/真实 CLI 验证与确定性 fixture 验证已分开标注。
+- 实测 Android 是模拟器，**没有声称已测试实体手机、所有浏览器、厂商强制省电策略或相机对准实体屏幕的光学条件**。
+- 普通 HTTP 浏览器不保证锁屏或关闭网页后的系统通知。原生 APP 的后台通知单独测试。
+- 思考只展示提供方公开返回的内容；真实模型可能不返回摘要。流式/最终思考映射和展示由 fixture 覆盖，不把假数据当作真实内部思考。
+- LSP 6 文件未报错，但只有 2 个确认 clean，4 个 inconclusive；未用空结果冒充全面无错。JS 测试、真实 CLI 加载、Java 编译/lint 和浏览器执行提供运行证据。
+- 旧 `artifacts/` 中无 `v1.1-` 前缀的报告是 v1.0.0 历史记录，不能代替本次验证。
 
-## 证据文件
+## 新版证据
 
 `artifacts/`：
 
-- `bridge-tests.txt`、`real-agent-smoke.json`、`real-pi-interaction.json`、`real-smoke.txt`、`real-interaction.txt`。
-- `desktop-tests.txt`、`desktop-running.png`、`desktop-completed.png`。
-- `android-fixture-junit.xml`（2 个测试）、`android-live-junit.xml`（1 个真实测试）、构建日志、`android-lint.xml`。
-- `lan-chat.png`、`lan-choice-notification.png`、`lan-completed-notification.png`、`lan-scanner.png`。
-- `SHA256SUMS` 与依赖审计。APK 另见 Release 附件；私有部署配置不上传。
-- `android-fixture-build.txt`、`android-live-build.txt` 为脱敏的成功构建/测试日志。
+- `v1.1-unit-tests.txt`、`v1.1-browser-tests.txt`、`v1.1-real-web-tests.txt`。
+- `v1.1-real-web-report.json`：expectedScenarios=5、passedScenarios=5、pass=true。
+- `v1.1-actual-android-browser.json`、`v1.1-actual-android-browser.txt`、两张 actual-android-chrome 截图。
+- `v1.1-live-deployment.json`、`v1.1-live-deployment.txt`。
+- 四张 desktop/phone-linux-http 截图和四张 real-desktop/phone 截图。
+- `v1.1-android-fixture-junit.xml`、`v1.1-android-build.txt`、`v1.1-npm-audit.json`。
 
-真实配对码、AI 凭据、私有 token 文件和完整生产会话日志均不属于交付包。真实测试的配对参数已从复制的报告中脱敏。测试 fixture 中的固定 token 仅用于独立测试端口，不是生产配对码。
+### APK
+
+- Release 附件：`lan-agent-1.1.0.apk`，包名 `dev.lanagent`，versionCode 2。
+- 大小：**3,161,719 字节**。
+- SHA-256：`d2722049b98e241c1b813cde345c158302b487fe738d5c88530c1da6fbd21d15`。
+- debug 签名测试客户端，手机网页不依赖它。
+
+公开证据不包含生产配对码、AI 凭据、私有会话内容或完整生产日志。固定 fixture token 仅属于独立测试服务。源码 ZIP 由发布提交的 Git archive 生成，不包含工作目录缓存、私有恢复笔记或 APK。

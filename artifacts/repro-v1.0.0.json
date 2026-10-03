@@ -1,0 +1,10 @@
+{
+  "capabilities": {
+    "secure": false,
+    "randomUUID": "undefined",
+    "getRandomValues": "function"
+  },
+  "auth": "● 已连接",
+  "toast": "crypto.randomUUID is not a function",
+  "errors": []
+}

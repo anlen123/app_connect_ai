@@ -1,0 +1,1 @@
+Existing Linux :8787 deployment: desktop Pi + phone Codex, real inference/model/history/delete passed; pre-existing histories preserved.

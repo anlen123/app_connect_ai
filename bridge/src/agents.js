@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { VERSION } from './version.js';
 
 // Split strictly on LF, not Unicode line separators. Both agents use JSONL.
 export function jsonLines(stream, callback, onError) {
@@ -51,7 +52,21 @@ class ProcessAgent {
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(e); }
     this.pending.clear(); this.emit('error', { text: e.message, fatal: true });
   }
-  close() { this.closed = true; for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Session closed')); } this.pending.clear(); this.child.stdin.end(); const t = setTimeout(() => this.child.kill('SIGTERM'), 2000); t.unref(); }
+  close() {
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
+    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('Session closed')); }
+    this.pending.clear();
+    if (!this.child.pid || this.child.exitCode !== null || this.child.signalCode !== null) return Promise.resolve();
+    this.closePromise = new Promise(resolve => {
+      const terminate = setTimeout(() => this.child.kill('SIGTERM'), 2000);
+      const kill = setTimeout(() => this.child.kill('SIGKILL'), 5000);
+      terminate.unref(); kill.unref();
+      this.child.once('exit', () => { clearTimeout(terminate); clearTimeout(kill); resolve(); });
+      this.child.stdin.end();
+    });
+    return this.closePromise;
+  }
 }
 
 export class PiAgent extends ProcessAgent {
@@ -123,7 +138,7 @@ export class CodexAgent extends ProcessAgent {
   }
   rpc(method, params = {}) { return this.request({ method, params }); }
   async init() {
-    await this.rpc('initialize', { clientInfo: { name: 'lan_agent', title: 'LAN Agent', version: '1.0.0' }, capabilities: { experimentalApi: true } });
+    await this.rpc('initialize', { clientInfo: { name: 'lan_agent', title: 'LAN Agent', version: VERSION }, capabilities: { experimentalApi: true } });
     this.write({ method: 'initialized', params: {} });
     let models = [], cursor = null;
     do { const page = await this.rpc('model/list', { cursor, limit: 100 }); models.push(...page.data); cursor = page.nextCursor; } while (cursor);

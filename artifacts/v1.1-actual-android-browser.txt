@@ -1,0 +1,1 @@
+Actual Android Chrome: real Pi + Codex, LAN HTTP, model inference, chat, deletion all passed.
