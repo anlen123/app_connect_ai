@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="dev.lanagent.EndToEndTest" tests="3" failures="0" errors="0" skipped="0" time="55.144" timestamp="2026-10-03T10:02:01" hostname="localhost">
+  <properties>
+    <property name="device" value="lan-agent-test(AVD) - 15" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="customPairingCodeValidationAndPrivateStorage" classname="dev.lanagent.EndToEndTest" time="5.881" />
+  <testcase name="manualIpChatThinkingModelsChoicesAndBackgroundNotifications" classname="dev.lanagent.EndToEndTest" time="34.851" />
+  <testcase name="scannerOpensCameraAndReturnsSafely" classname="dev.lanagent.EndToEndTest" time="10.22" />
+</testsuite>

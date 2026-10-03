@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { chromium, devices } from 'playwright';
 import { expect } from '@playwright/test';
+import { menuClick } from './browser-actions.js';
 import { createBridge, linuxLanUrl } from '../src/server.js';
 
 const report = [];
@@ -66,6 +67,7 @@ test('real Linux web release gate', { timeout: 1000000 }, async t => {
       assert.equal(session.turns, 2); assert.equal(session.tools, toolsBefore, 'Second reply must use retained context, not read the file again');
       assert.equal(session.status, 'completed');
       await page.locator('#pair').click(); await expect(page.locator('#pairDialog')).toBeVisible();
+      await page.locator('#pairCredentials').check(); await expect(page.locator('#pairUrl')).toHaveValue(/#token=/);
       const browserUrl = await page.locator('#pairUrl').inputValue();
       assert.ok(browserUrl.startsWith(`${url}/#token=`)); await page.locator('#closePair').click();
       const peerContext = await browser.newContext({ ...devices['Pixel 5'] }); t.after(() => peerContext.close()); const peer = await peerContext.newPage();
@@ -79,13 +81,13 @@ test('real Linux web release gate', { timeout: 1000000 }, async t => {
         await expect(page.locator('#status')).toContainText('已完成');
         assert.ok(session.events.some(e => e.event === 'notice' && e.text.includes('继续')));
       }
-      await page.locator('#renameSession').click(); await page.locator('#renameTitle').fill(title + ' 已验证');
+      await menuClick(page, 'renameSession'); await page.locator('#renameTitle').fill(title + ' 已验证');
       await page.locator('#renameForm').getByRole('button', { name: '保存名称' }).click(); await expect(peer.locator('#title')).toHaveText(title + ' 已验证');
       await page.reload(); await expect(page.locator('#connection')).toHaveText('● 已连接'); await expect(page.locator('#title')).toHaveText(title + ' 已验证');
       await expect(page.locator('.entry.assistant').last()).toContainText(contextMarker);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await page.screenshot({ path: `../artifacts/v1.1-real-${viewport}-${agent}.png` });
-      await peer.locator('#deleteSession').click(); await peer.locator('#confirmDelete').click();
+      await page.screenshot({ path: `../artifacts/pi-web-real-${viewport}-${agent}.png` });
+      await menuClick(peer, 'deleteSession'); await peer.locator('#confirmDelete').click();
       await expect(peer.locator('#deleteDialog')).not.toBeVisible({ timeout: 15000 }); await expect(page.locator('#emptyState')).toBeVisible();
       assert.equal(bridge.sessions.size, 0); assert.equal(existsSync(join(root, '.lan-agent', `${session.id}.jsonl`)), false);
       assert.ok(session.agent === null); assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
@@ -100,9 +102,9 @@ test('real Linux web release gate', { timeout: 1000000 }, async t => {
     const session = [...bridge.sessions.values()][0], child = session.agent.child;
     await page.locator('#prompt').fill('请调用命令工具执行 sleep 20，等命令结束后回复 DONE。不要写文件。'); await page.locator('#send').click();
     await expect.poll(() => session.tools, { timeout: 90000 }).toBeGreaterThan(0);
-    await page.locator('#deleteSession').click(); await page.locator('#confirmDelete').click(); await expect(page.locator('#emptyState')).toBeVisible({ timeout: 15000 });
+    await menuClick(page, 'deleteSession'); await page.locator('#confirmDelete').click(); await expect(page.locator('#emptyState')).toBeVisible({ timeout: 15000 });
     assert.equal(bridge.sessions.size, 0); assert.ok(child.exitCode !== null || child.signalCode !== null); assert.equal(existsSync(join(root, '.lan-agent', `${session.id}.jsonl`)), false);
     report.push({ agent: 'codex', viewport: 'phone', runningTaskDeletion: true, deleteStoppedProcess: true, historyRemoved: true, pass: true });
   });
-  writeFileSync(new URL('../../artifacts/v1.1-real-web-report.json', import.meta.url), JSON.stringify({ expectedScenarios: 5, passedScenarios: report.length, pass: report.length === 5, scenarios: report }, null, 2));
+  writeFileSync(new URL('../../artifacts/pi-web-real-web-report.json', import.meta.url), JSON.stringify({ expectedScenarios: 5, passedScenarios: report.length, pass: report.length === 5, scenarios: report }, null, 2));
 });

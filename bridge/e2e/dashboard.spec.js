@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { menuClick } from '../test/browser-actions.js';
 
-const TOKEN = 'test-only-token-0123456789abcdefgh';
+const TOKEN = 'CustomPair_42';
 async function login(page) {
   await page.goto('/');
   expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
@@ -17,7 +18,7 @@ async function newChat(page, agent, title) {
   await expect(page.locator('#title')).toHaveText(title); await expect(page.locator('#send')).toBeEnabled();
 }
 async function removeCurrent(page) {
-  await page.locator('#deleteSession').click(); await page.locator('#confirmDelete').click();
+  await menuClick(page, 'deleteSession'); await page.locator('#confirmDelete').click();
   await expect(page.locator('#deleteDialog')).not.toBeVisible();
 }
 for (const agent of ['pi', 'codex']) {
@@ -36,12 +37,12 @@ for (const agent of ['pi', 'codex']) {
     await page.locator('.choice').getByRole('button', { name: '继续', exact: true }).click();
     await expect(page.locator('#status')).toContainText('已完成');
     await expect(page.locator('.entry.assistant').last()).toContainText('选择结果：继续');
-    await page.locator('#renameSession').click(); await page.locator('#renameTitle').fill(title + '-renamed');
+    await menuClick(page, 'renameSession'); await page.locator('#renameTitle').fill(title + '-renamed');
     await page.locator('#renameForm').getByRole('button', { name: '保存名称' }).click(); await expect(page.locator('#title')).toHaveText(title + '-renamed');
     await page.reload(); await expect(page.locator('#connection')).toHaveText('● 已连接');
     await expect(page.locator('#title')).toHaveText(title + '-renamed'); await expect(page.locator('.entry.assistant').last()).toContainText('选择结果：继续');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await page.screenshot({ path: `../artifacts/v1.1-${info.project.name}-${agent}.png` });
+    await page.screenshot({ path: `../artifacts/pi-web-${info.project.name}-${agent}.png` });
     await removeCurrent(page); await expect(page.locator('#emptyState')).toBeVisible(); await expect(page.locator('#send')).toBeDisabled();
     await page.reload(); await expect(page.locator('#connection')).toHaveText('● 已连接'); await expect(page.locator('#emptyState')).toBeVisible();
     expect(errors).toEqual([]);
@@ -51,6 +52,7 @@ test('phone browser link pairs directly and another device sees chat and deletio
   const errors = []; page.on('pageerror', e => errors.push(e.message)); await login(page);
   await newChat(page, 'pi', '跨设备共享');
   await page.locator('#pair').click(); await expect(page.locator('#pairDialog')).toBeVisible();
+  await page.locator('#pairCredentials').check(); await expect(page.locator('#pairUrl')).toHaveValue(/#token=/);
   const url = await page.locator('#pairUrl').inputValue(); expect(new URL(url).origin).toBe(baseURL); expect(url).toContain('#token=');
   await expect(page.locator('#qr')).toHaveAttribute('src', /^data:image\/png/); await page.locator('#closePair').click();
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -72,4 +74,42 @@ test('invalid login and invalid project directory show useful errors without bro
   await page.locator('#newSession').click(); await page.locator('#cwd').fill('definitely-missing-folder'); await page.locator('#createButton').click();
   await expect(page.locator('#createError')).toContainText('不存在'); await expect(page.locator('#createButton')).toBeEnabled();
   await page.locator('#cancelCreate').click(); await expect(page.locator('#emptyState')).toBeVisible();
+});
+
+test('pi-web theme, safe Markdown, collapsed tools, copy/export and manual pairing', async ({ page }, info) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message)); await login(page);
+  const before = await page.locator('html').getAttribute('data-theme'); await page.locator('#theme').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', before === 'dark' ? 'light' : 'dark');
+  await newChat(page, 'pi', 'Markdown 工作区');
+  const payload = '\n\n# Markdown 标题\n\n**加粗内容**\n\n```js\nconst answer = 42;\n```\n\n| 项目 | 值 |\n| --- | --- |\n| test | 42 |\n\n<img src="https://example.invalid/leak" onerror="window.pwned=1"><script>window.pwned=2</script>[bad](javascript:alert(1))';
+  await page.locator('#prompt').fill(payload); await page.locator('#send').click();
+  await expect(page.locator('.entry.assistant .markdown h1')).toHaveText('Markdown 标题');
+  await expect(page.locator('.markdown strong')).toHaveText('加粗内容'); await expect(page.locator('.markdown table')).toContainText('test');
+  expect(await page.locator('.markdown img,.markdown script,.markdown [onerror],.markdown a[href^="javascript:"]').count()).toBe(0);
+  expect(await page.evaluate(() => window.pwned)).toBeUndefined();
+  await expect(page.locator('.entry.thinking')).not.toHaveAttribute('open', '');
+  await page.locator('.entry.thinking > summary').click(); await expect(page.locator('.entry.thinking .entry-body')).toBeVisible();
+  await page.locator('.code-copy').click(); await expect(page.locator('#toast')).toContainText('已复制');
+  await expect(page.locator('.choice')).toBeVisible(); await page.locator('.choice').getByRole('button', { name: '继续', exact: true }).click(); await expect(page.locator('#status')).toContainText('已完成');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#exportSession').click()]); expect(download.suggestedFilename()).toBe('conversation.md');
+  await page.locator('#pair').click(); await expect(page.locator('#pairDialog')).toBeVisible(); expect(new URL(await page.locator('#pairUrl').inputValue()).hash).toBe(''); await page.locator('#closePair').click();
+  await page.screenshot({ path: `../artifacts/pi-web-workspace-${info.project.name}.png` });
+  await page.reload(); await expect(page.locator('html')).toHaveAttribute('data-theme', before === 'dark' ? 'light' : 'dark'); await expect(page.locator('.markdown h1')).toHaveText('Markdown 标题');
+  await removeCurrent(page); await page.locator('#logout').click(); await expect(page.locator('#token')).toHaveValue(''); expect(errors).toEqual([]);
+});
+
+test('project filter, session menus and desktop configurable Enter behavior', async ({ page }, info) => {
+  await login(page);
+  for (const project of ['project-alpha', 'project-beta']) {
+    if (await page.locator('#sidebarToggle').isVisible()) await page.locator('#sidebarToggle').click();
+    await page.locator('#newSession').click(); await page.locator('#sessionName').fill(project); await page.locator('#cwd').fill(project); await page.locator('#createButton').click(); await expect(page.locator('#createDialog')).not.toBeVisible();
+  }
+  if (await page.locator('#sidebarToggle').isVisible()) await page.locator('#sidebarToggle').click();
+  const options = await page.locator('#projectFilter option').evaluateAll(nodes => nodes.map(n => ({ text: n.textContent, value: n.value })));
+  await page.locator('#projectFilter').selectOption(options.find(o => o.text === 'project-alpha').value); await expect(page.locator('.session')).toHaveCount(1); await page.locator('.session').click();
+  await page.locator('#prompt').fill('keyboard draft');
+  if (info.project.name.startsWith('desktop')) { await page.locator('#enterMode').click(); await page.locator('#prompt').press('Enter'); await expect(page.locator('#status')).toContainText('就绪'); await page.locator('#prompt').press('Control+Enter'); }
+  else { await page.locator('#prompt').press('Enter'); await expect(page.locator('#status')).toContainText('就绪'); await page.locator('#send').click(); }
+  await expect(page.locator('.entry.assistant')).toContainText('keyboard draft'); await expect(page.locator('.choice')).toBeVisible(); await page.locator('.choice').getByRole('button', { name: '继续', exact: true }).click(); await expect(page.locator('#status')).toContainText('已完成');
+  await removeCurrent(page); await expect(page.locator('#title')).toHaveText('project-beta'); await removeCurrent(page); await expect(page.locator('#emptyState')).toBeVisible();
 });

@@ -85,6 +85,13 @@ public class EndToEndTest {
         command("delete",new JSONObject().put("sessionId",codex.getString("id")));
         assertTrue(device.wait(Until.hasObject(By.text("新建一个会话开始")),5000));
     }
+    @Test public void customPairingCodeValidationAndPrivateStorage() throws Exception {
+        Pairing custom = new Pairing(fixtureUrl,"CustomPair_42"); custom.save(context); assertEquals(custom.token,Pairing.load(context).token);
+        assertEquals(custom.token,Pairing.parse(fixtureUrl+"/#token=CustomPair_42").token);
+        for (String bad : new String[]{"short","x".repeat(257),"123456789012\ncontrol"}) {
+            try { new Pairing(fixtureUrl,bad); fail("Invalid custom code accepted"); } catch (IllegalArgumentException expected) { }
+        }
+    }
     @Test public void scannerOpensCameraAndReturnsSafely() throws Exception {
         device.executeShellCommand("pm grant dev.lanagent android.permission.CAMERA");
         device.findObject(By.text("扫描电脑二维码")).click();

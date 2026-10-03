@@ -1,0 +1,110 @@
+
+> lan-agent-bridge@1.2.0 test
+> node --test test/*.test.js
+
+TAP version 13
+# Subtest: authenticated websocket: sessions, thinking, model, choice, completion, replay
+ok 1 - authenticated websocket: sessions, thinking, model, choice, completion, replay
+  ---
+  duration_ms: 167.911434
+  type: 'test'
+  ...
+# Subtest: bad token and hostile browser origin rejected
+ok 2 - bad token and hostile browser origin rejected
+  ---
+  duration_ms: 10.810331
+  type: 'test'
+  ...
+# Subtest: restart replays stored history, never pretends child process is alive
+ok 3 - restart replays stored history, never pretends child process is alive
+  ---
+  duration_ms: 5.069976
+  type: 'test'
+  ...
+# Subtest: JSONL handles fragmented UTF8, CRLF and Unicode separators
+ok 4 - JSONL handles fragmented UTF8, CRLF and Unicode separators
+  ---
+  duration_ms: 1.862543
+  type: 'test'
+  ...
+# Subtest: pi normalization waits for settled, replaces authoritative content, exposes all dialogs
+ok 5 - pi normalization waits for settled, replaces authoritative content, exposes all dialogs
+  ---
+  duration_ms: 0.842774
+  type: 'test'
+  ...
+# Subtest: codex normalization: reasoning, task plan, approvals, questions, errors
+ok 6 - codex normalization: reasoning, task plan, approvals, questions, errors
+  ---
+  duration_ms: 1.280927
+  type: 'test'
+  ...
+# Subtest: delete closes process, removes bridge history, persists removal, rejects subsequent access
+ok 7 - delete closes process, removes bridge history, persists removal, rejects subsequent access
+  ---
+  duration_ms: 21.126404
+  type: 'test'
+  ...
+# Subtest: delete is allowed during an unresolved prompt and late failure does not resurrect session
+ok 8 - delete is allowed during an unresolved prompt and late failure does not resurrect session
+  ---
+  duration_ms: 27.666273
+  type: 'test'
+  ...
+# Subtest: delete during agent initialization cannot recreate metadata/history
+ok 9 - delete during agent initialization cannot recreate metadata/history
+  ---
+  duration_ms: 3.278024
+  type: 'test'
+  ...
+# Subtest: rename, close, delete offline and fresh restart maintain correct state
+ok 10 - rename, close, delete offline and fresh restart maintain correct state
+  ---
+  duration_ms: 4.385737
+  type: 'test'
+  ...
+# Subtest: working directory rejects files, missing folders and out-of-root symlinks
+ok 11 - working directory rejects files, missing folders and out-of-root symlinks
+  ---
+  duration_ms: 5.807131
+  type: 'test'
+  ...
+# Subtest: phone browser QR uses browser URL and preserves legacy Android JSON pairing
+ok 12 - phone browser QR uses browser URL and preserves legacy Android JSON pairing
+  ---
+  duration_ms: 43.176463
+  type: 'test'
+  ...
+# Subtest: administrator custom code validation, atomic private persistence and rotation
+ok 13 - administrator custom code validation, atomic private persistence and rotation
+  ---
+  duration_ms: 51.69953
+  type: 'test'
+  ...
+# Subtest: repeated guessing is rate-limited, including on new WebSocket connections
+ok 14 - repeated guessing is rate-limited, including on new WebSocket connections
+  ---
+  duration_ms: 15.588222
+  type: 'test'
+  ...
+# Subtest: default website pairing can omit credentials, legacy opt-in remains compatible
+ok 15 - default website pairing can omit credentials, legacy opt-in remains compatible
+  ---
+  duration_ms: 56.114155
+  type: 'test'
+  ...
+# Subtest: pi recovered retry completes successfully; failed final message stays failed
+ok 16 - pi recovered retry completes successfully; failed final message stays failed
+  ---
+  duration_ms: 1.899656
+  type: 'test'
+  ...
+1..16
+# tests 16
+# suites 0
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 337.84023

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { PiAgent, CodexAgent } from './agents.js';
 import { VERSION } from './version.js';
+import { validatePairingCode, savePairingCode } from './pairing-code.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const apkPath = resolve(here, `../../artifacts/lan-agent-${VERSION}.apk`);
@@ -30,8 +31,8 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const tokenPath = resolve(dataDir, 'token');
   token ||= existsSync(tokenPath) ? readFileSync(tokenPath, 'utf8').trim() : randomBytes(24).toString('base64url');
-  if (token.length < 24) throw new Error('Pairing token must be at least 24 characters');
-  writeFileSync(tokenPath, token + '\n', { mode: 0o600 });
+  token = validatePairingCode(token);
+  savePairingCode(dataDir, token);
   const sessions = new Map(), clients = new Set();
   const metadataPath = resolve(dataDir, 'sessions.json');
   if (existsSync(metadataPath)) {
@@ -116,7 +117,7 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
       res.setHeader('Content-Disposition', `attachment; filename="lan-agent-${VERSION}.apk"`);
       res.setHeader('X-Content-Type-Options', 'nosniff'); res.end(readFileSync(apkPath)); return;
     }
-    const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'] };
+    const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/markdown.js': ['markdown.js', 'text/javascript; charset=utf-8'], '/vendor/marked.js': ['vendor/marked.js', 'text/javascript; charset=utf-8'], '/vendor/purify.js': ['vendor/purify.js', 'text/javascript; charset=utf-8'] };
     const file = files[u.pathname]; if (!file) { res.writeHead(404); res.end(); return; }
     res.setHeader('Content-Type', file[1]); res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer');
@@ -124,6 +125,7 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
     res.end(readFileSync(resolve(here, '../public', file[0])));
   });
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 * 1024 });
+  const authFailures = new Map();
   wss.on('connection', (ws, req) => {
     try { if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { ws.close(1008, 'Origin rejected'); return; } }
     catch { ws.close(1008, 'Invalid origin'); return; }
@@ -138,7 +140,15 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
         command = JSON.parse(bytes.toString());
         if (!command || typeof command !== 'object' || typeof command.type !== 'string') throw new Error('Invalid command');
         if (!ws.authed) {
-          if (command.type !== 'auth' || !authenticated(command.token)) { ws.close(1008, 'Invalid pairing token'); return; }
+          const ip = req.socket.remoteAddress, now = Date.now();
+          const failure = authFailures.get(ip);
+          if (failure && now - failure.time < 300000 && failure.count >= 5) { ws.close(1008, 'Too many login attempts; retry in 5 minutes'); return; }
+          if (command.type !== 'auth' || !authenticated(command.token)) {
+            if (authFailures.size >= 1000) authFailures.delete(authFailures.keys().next().value);
+            authFailures.set(ip, { time: failure && now - failure.time < 300000 ? failure.time : now, count: failure && now - failure.time < 300000 ? failure.count + 1 : 1 });
+            ws.close(1008, 'Invalid pairing token'); return;
+          }
+          authFailures.delete(ip);
           ws.authed = true; clearTimeout(deadline); clients.add(ws);
           send(ws, { type: 'hello', version: VERSION, root, agents: catalog(), lanUrl: lanAddress(originFor(req)), apkAvailable: existsSync(apkPath), sessions: [...sessions.values()].map(summary) }); return;
         }
@@ -151,7 +161,7 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
     if (c.type === 'list') return [...sessions.values()].map(summary);
     if (c.type === 'agents') return catalog();
     if (c.type === 'pair') {
-      const url = lanAddress(context.origin), browserUrl = `${url}/#token=${encodeURIComponent(token)}`;
+      const url = lanAddress(context.origin), browserUrl = c.includeCredentials === false ? `${url}/` : `${url}/#token=${encodeURIComponent(token)}`;
       const payload = JSON.stringify({ version: 1, url, token });
       return { url, token, qr: await QRCode.toDataURL(payload), payload, browserUrl, webQr: await QRCode.toDataURL(browserUrl) };
     }
@@ -232,11 +242,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const root = resolve(process.env.AGENT_ROOT || process.cwd());
   const port = Number(process.env.PORT || 8787), host = process.env.HOST || '0.0.0.0';
   const advertisedUrl = process.env.LAN_URL;
-  const bridge = createBridge({ root, dataDir: resolve(process.env.DATA_DIR || resolve(root, '.lan-agent')), token: process.env.PAIR_TOKEN, advertisedUrl });
+  const dataDir = resolve(process.env.DATA_DIR || resolve(root, '.lan-agent'));
+  const configuredCode = process.env.PAIR_CODE || process.env.PAIR_TOKEN;
+  if (!configuredCode && !existsSync(resolve(dataDir, 'token'))) throw new Error('请先运行 scripts/set-pairing-code.sh 设置自定义配对码，或私下配置 PAIR_CODE 环境变量');
+  const bridge = createBridge({ root, dataDir, token: configuredCode, advertisedUrl });
   bridge.server.listen(port, host, async () => {
     const url = advertisedUrl || linuxLanUrl(bridge.server.address().port);
-    console.log(`\nLAN Agent ${VERSION} · Linux Web\n项目根目录: ${root}\n本机网页: http://localhost:${bridge.server.address().port}/#token=${encodeURIComponent(bridge.token)}\n电脑/手机网址: ${url}\n登录配对码: ${bridge.token}\n下面二维码可直接打开手机网页，不需要 APK。仅在可信局域网使用。`);
-    console.log(await QRCode.toString(`${url}/#token=${encodeURIComponent(bridge.token)}`, { type: 'terminal', small: true }));
+    console.log(`\nLAN Agent ${VERSION} · Linux Web\n项目根目录: ${root}\n本机网页: http://localhost:${bridge.server.address().port}\n电脑/手机网址: ${url}\n登录时输入管理员设置的自定义配对码（不会在日志中显示）。\n下面二维码打开手机网页；登录仍需要配对码。仅在可信局域网使用。`);
+    console.log(await QRCode.toString(`${url}/`, { type: 'terminal', small: true }));
   });
   serverErrors(bridge.server);
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => { await bridge.close(); process.exit(0); });

@@ -20,7 +20,8 @@ public final class Pairing {
         if (!normalized.contains("://")) normalized = "http://" + normalized;
         URI uri = URI.create(normalized);
         if (!("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) || uri.getHost() == null || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null || !(uri.getPath().isEmpty() || uri.getPath().equals("/"))) throw new IllegalArgumentException("请输入 http(s)://局域网IP:端口，不要包含路径");
-        if (token.trim().length() < 24) throw new IllegalArgumentException("配对码至少 24 个字符");
+        String code = token.trim(); int length = code.codePointCount(0,code.length());
+        if (length < 12 || length > 256 || code.matches("(?s).*[\\x00-\\x1f\\x7f].*")) throw new IllegalArgumentException("配对码需要 12–256 个字符，不能包含控制字符");
         this.url = normalized.replaceAll("/+$", ""); this.token = token.trim();
     }
     public static Pairing parse(String qr) throws Exception {

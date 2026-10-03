@@ -1,0 +1,35 @@
+{
+  "pass": true,
+  "scenarios": [
+    {
+      "agent": "pi",
+      "actualAndroidChrome": true,
+      "device": {
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "secure": false,
+        "width": 393,
+        "coarse": true,
+        "uuid": "undefined"
+      },
+      "selectedModelInference": "openai-codex/gpt-6-sol",
+      "realReply": true,
+      "deleteRemovedHistoryAndProcess": true,
+      "pass": true
+    },
+    {
+      "agent": "codex",
+      "actualAndroidChrome": true,
+      "device": {
+        "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "secure": false,
+        "width": 393,
+        "coarse": true,
+        "uuid": "undefined"
+      },
+      "selectedModelInference": "gpt-6-sol",
+      "realReply": true,
+      "deleteRemovedHistoryAndProcess": true,
+      "pass": true
+    }
+  ]
+}

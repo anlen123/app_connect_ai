@@ -1,0 +1,79 @@
+{
+  "expectedScenarios": 5,
+  "passedScenarios": 5,
+  "pass": true,
+  "scenarios": [
+    {
+      "viewport": "desktop",
+      "agent": "pi",
+      "insecureHttp": true,
+      "browserRandomUuidUnavailable": true,
+      "actualChildProcess": true,
+      "modelUsedForSecondReply": "openai-codex/gpt-6-sol",
+      "replies": 2,
+      "retainedContext": true,
+      "crossDeviceShared": true,
+      "piRealChoice": true,
+      "deleteRemovedHistory": true,
+      "deleteStoppedProcess": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "viewport": "desktop",
+      "agent": "codex",
+      "insecureHttp": true,
+      "browserRandomUuidUnavailable": true,
+      "actualChildProcess": true,
+      "modelUsedForSecondReply": "gpt-6-sol",
+      "replies": 2,
+      "retainedContext": true,
+      "crossDeviceShared": true,
+      "piRealChoice": false,
+      "deleteRemovedHistory": true,
+      "deleteStoppedProcess": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "viewport": "phone",
+      "agent": "pi",
+      "insecureHttp": true,
+      "browserRandomUuidUnavailable": true,
+      "actualChildProcess": true,
+      "modelUsedForSecondReply": "openai-codex/gpt-6-sol",
+      "replies": 2,
+      "retainedContext": true,
+      "crossDeviceShared": true,
+      "piRealChoice": true,
+      "deleteRemovedHistory": true,
+      "deleteStoppedProcess": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "viewport": "phone",
+      "agent": "codex",
+      "insecureHttp": true,
+      "browserRandomUuidUnavailable": true,
+      "actualChildProcess": true,
+      "modelUsedForSecondReply": "gpt-6-sol",
+      "replies": 2,
+      "retainedContext": true,
+      "crossDeviceShared": true,
+      "piRealChoice": false,
+      "deleteRemovedHistory": true,
+      "deleteStoppedProcess": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "agent": "codex",
+      "viewport": "phone",
+      "runningTaskDeletion": true,
+      "deleteStoppedProcess": true,
+      "historyRemoved": true,
+      "pass": true
+    }
+  ]
+}

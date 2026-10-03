@@ -1,3 +1,4 @@
+import { renderMarkdown } from './markdown.js';
 const $ = id => document.getElementById(id);
 const emptyState = $('emptyState'), emptyNew = $('emptyNew');
 const running = new Set(['starting', 'running', 'waiting']);
@@ -13,6 +14,11 @@ let sessions = [], agents = [], root = '', requestIndex = 0, selectionGeneration
 // Date + counter works on ordinary LAN HTTP, where crypto.randomUUID is unavailable.
 const requestPrefix = Date.now().toString(36);
 const requests = new Map(), histories = new Map(), rows = new Map(), choiceNodes = new Map(), drafts = new Map(), inflight = new Set(), tombstones = new Set();
+let enterMode = stored('enterMode', true) || 'enter';
+const theme = stored('theme', true) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+document.documentElement.dataset.theme = theme;
+$('theme').textContent = theme === 'dark' ? '☀' : '☾';
+$('enterMode').textContent = enterMode === 'enter' ? 'Enter ↵' : 'Ctrl+Enter ↵';
 $('rememberToken').checked = Boolean(stored('pairToken', true));
 $('currentAddress').textContent = location.origin;
 function toast(text) { $('toast').textContent = String(text); $('toast').hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').hidden = true, 6500); }
@@ -58,7 +64,7 @@ function connect() {
       const invalid = e.reason === 'Invalid pairing token';
       if (invalid) { token = ''; store('pairToken', ''); store('pairToken', '', true); }
       $('login').hidden = false; $('workspace').hidden = true; $('logout').hidden = true;
-      formError('loginError', invalid ? '配对码不正确或已失效，请输入 Linux 终端显示的新配对码' : `服务拒绝连接：${e.reason || '请检查访问地址'}`);
+      formError('loginError', invalid ? '配对码不正确或已失效，请向管理员确认自定义配对码' : `服务拒绝连接：${e.reason || '请检查访问地址'}`);
       $('connection').textContent = '○ 未连接'; return;
     }
     $('connection').textContent = '○ 断开 · 重连中';
@@ -71,7 +77,7 @@ function receive(r) {
     store('pairToken', token); if ($('rememberToken').checked) store('pairToken', token, true);
     agents = r.agents || [{ id: 'pi', name: 'Pi', available: true }, { id: 'codex', name: 'Codex', available: true }]; root = r.root;
     $('root').textContent = `Linux 根目录 · ${root}`; $('version').textContent = `LAN Agent ${r.version}`;
-    $('connection').textContent = '● 已连接'; $('login').hidden = true; $('workspace').hidden = false; $('logout').hidden = false;
+    $('connection').textContent = '● 已连接'; $('token').value = ''; $('login').hidden = true; $('workspace').hidden = false; $('logout').hidden = false;
     $('apkDownload').hidden = !r.apkAvailable; $('notify').hidden = !(window.isSecureContext && 'Notification' in window);
     populateAgents(); updateSessions(r.sessions); const id = selected;
     if (id) selectSession(id).catch(e => { if (connected) toast(e.message); }); else renderEmpty();
@@ -116,15 +122,26 @@ function agentHint() {
   $('createButton').disabled = createBusy || !connected || !a?.available;
 }
 function renderSessions() {
+  let project = $('projectFilter').value;
+  $('projectFilter').replaceChildren(new Option('所有项目', ''));
+  for (const cwd of [...new Set(sessions.map(s => s.cwd))].sort()) { const option = new Option(cwd?.split('/').filter(Boolean).at(-1) || cwd || '根目录', cwd); option.title = cwd; $('projectFilter').append(option); }
+  $('projectFilter').value = [...$('projectFilter').options].some(o => o.value === project) ? project : '';
+  project = $('projectFilter').value;
   const query = $('sessionSearch').value.toLowerCase(), scroll = $('sessions').scrollTop;
+  let lastProject = '';
   $('sessions').replaceChildren(); $('sessionCount').textContent = `${sessions.length} 个会话 · ${sessions.filter(s => s.active).length}/8 个进程`;
-  for (const s of [...sessions].reverse().filter(s => `${s.title} ${s.agent}`.toLowerCase().includes(query))) {
+  const visible = [...sessions].reverse().filter(s => (!project || s.cwd === project) && `${s.title} ${s.agent} ${s.cwd}`.toLowerCase().includes(query));
+  visible.sort((a, b) => a.cwd.localeCompare(b.cwd));
+  for (const s of visible) {
+    if (s.cwd !== lastProject) { const heading = document.createElement('div'); heading.className = 'project-heading'; heading.textContent = '⌁ ' + (s.cwd.split('/').filter(Boolean).at(-1) || s.cwd); heading.title = s.cwd; $('sessions').append(heading); lastProject = s.cwd; }
     const row = document.createElement('div'); row.className = `session-row ${s.id === selected ? 'active' : ''}`;
     const b = document.createElement('button'); b.className = 'session'; b.dataset.sessionId = s.id;
     const title = document.createElement('span'); title.className = 'session-title'; title.textContent = s.title;
     const meta = document.createElement('small'); meta.textContent = `${s.agent.toUpperCase()} · ${statusNames[s.status] || s.status} · ${s.turns || 0} 轮`;
     b.append(title, meta); b.onclick = () => selectSession(s.id).catch(e => toast(e.message));
-    const remove = document.createElement('button'); remove.className = 'session-delete'; remove.textContent = '×'; remove.dataset.sessionId = s.id; remove.setAttribute('aria-label', `删除会话 ${s.title}`); remove.disabled = !connected; remove.onclick = () => showDelete(s.id);
+    const remove = document.createElement('button'); remove.className = 'session-delete'; remove.textContent = '⋯'; remove.dataset.sessionId = s.id; remove.setAttribute('aria-label', `会话操作 ${s.title}`); remove.disabled = !connected;
+    const showMenu = async () => { try { await selectSession(s.id); $('sessionMenu').open = true; } catch (e) { toast(e.message); } };
+    remove.onclick = showMenu; row.oncontextmenu = e => { e.preventDefault(); showMenu(); };
     row.append(b, remove); $('sessions').append(row);
   }
   $('sessions').scrollTop = scroll;
@@ -136,6 +153,7 @@ function renderControls() {
   $('status').textContent = s ? `${statusNames[s.status] || s.status} · ${s.turns || 0} 轮 · ${s.tools || 0} 次工具调用` : '电脑和手机打开同一个网址，操作同一组会话';
   $('workingDirectory').textContent = s ? `目录 · ${s.cwd}` : ''; $('workingDirectory').title = s?.cwd || '';
   $('stop').disabled = !connected || !s?.active || !busy || inflight.has(`${selected}:abort`);
+  $('exportSession').disabled = !s || !histories.get(s.id)?.loaded;
   $('renameSession').disabled = !connected || !s; $('deleteSession').disabled = !connected || !s || inflight.has(`${selected}:delete`);
   $('closeSession').disabled = !connected || !s?.active || inflight.has(`${selected}:close`);
   const hasModels = Boolean(s?.models?.length);
@@ -144,6 +162,7 @@ function renderControls() {
   $('model').disabled = !ready || busy || !hasModels || inflight.has(`${selected}:model`); $('modelSearch').disabled = $('model').disabled;
   const warning = s && !s.ready ? (s.status === 'starting' ? '正在启动 agent 并加载模型，请稍候。启动失败时请检查 Linux CLI 登录与服务日志。' : '会话进程已停止或启动失败。这里可查看历史，重新聊天请新建会话；也可以删除这条记录。') : s && !hasModels ? '该 agent 没有配置可用模型，请在 Linux 终端登录或配置后重新创建会话。' : '';
   $('sessionWarning').textContent = warning; $('sessionWarning').hidden = !warning;
+  resizeComposer();
   $('pending').textContent = inflight.has(`${selected}:model`) ? '正在切换模型…' : inflight.has(`${selected}:prompt`) ? '正在提交…' : '';
   const signature = `${s?.id}:${s?.model}:${s?.models?.length}:${$('modelSearch').value}`;
   if (signature !== modelSignature) {
@@ -170,7 +189,8 @@ async function selectSession(id, snapshot) {
   if (!sessions.some(s => s.id === id)) throw new Error('该会话已删除');
   if (selected && selected !== id) drafts.set(selected, $('prompt').value);
   selected = id; store('selectedSession', id); $('prompt').value = drafts.get(id) || ''; $('modelSearch').value = ''; modelSignature = '';
-  setSidebar(false); const generation = ++selectionGeneration;
+  if (matchMedia('(max-width:760px)').matches) setSidebar(false);
+  $('sessionMenu').open = false; const generation = ++selectionGeneration;
   if (snapshot) applySnapshot(snapshot);
   renderHistory(); renderSessions(); renderControls();
   if (!snapshot) {
@@ -194,19 +214,24 @@ function renderEvent(e, replay = false) {
   const channel = e.channel || e.event, key = e.key ? `${channel}:${e.key}` : `event:${e.seq}`;
   let row = rows.get(key); const nearBottom = $('timeline').scrollHeight - $('timeline').scrollTop - $('timeline').clientHeight < 100;
   if (!row) {
-    const collapsible = ['tool', 'tool_output', 'progress', 'diagnostic'].includes(channel), el = document.createElement(collapsible ? 'details' : 'div'); el.className = `entry ${channel}`;
-    const label = document.createElement(collapsible ? 'summary' : 'span'); label.className = 'label'; label.textContent = `${channel.toUpperCase()} / ${new Date(e.timestamp).toLocaleTimeString()}`;
-    const body = document.createElement('div'); body.className = 'entry-body'; el.append(label, body); $('timeline').append(el); row = { body, el, label }; rows.set(key, row);
+    const collapsible = ['thinking', 'tool', 'tool_output', 'progress', 'diagnostic'].includes(channel), el = document.createElement(collapsible ? 'details' : 'div'); el.className = `entry ${channel}`;
+    const labels = { user: '你', assistant: current()?.model?.split('/').at(-1) || 'Assistant', thinking: '思考', tool: '工具', tool_output: '工具输出', progress: '进度', diagnostic: '诊断', completed: '状态', error: '错误' };
+    const label = document.createElement(collapsible ? 'summary' : 'span'); label.className = 'label'; label.textContent = `${labels[channel] || channel} · ${new Date(e.timestamp).toLocaleTimeString()}`;
+    const body = document.createElement('div'); body.className = 'entry-body'; el.append(label, body); $('timeline').append(el); row = { body, el, label, text: '' }; rows.set(key, row);
+    if (['assistant', 'user'].includes(channel)) { const button = document.createElement('button'); button.className = 'message-copy'; button.textContent = '复制'; button.type = 'button'; button.onclick = () => copy(row.text); label.prepend(button); }
+    if (channel === 'assistant') body.classList.add('markdown');
   }
   const text = e.text ?? (e.event === 'completed' ? `任务 ${statusNames[e.status] || e.status}${e.error ? '\n' + JSON.stringify(e.error) : ''}` : e.event === 'tool' ? `${e.name} · ${e.status}\n${JSON.stringify(e.detail, null, 2)}` : JSON.stringify(e.detail ?? e));
-  if (e.event === 'delta' || e.event === 'tool_output') row.body.textContent += text; else row.body.textContent = text;
+  if (e.event === 'delta' || e.event === 'tool_output') row.text += text; else row.text = text;
+  if (channel === 'assistant') renderMarkdown(row.body, row.text, copy); else row.body.textContent = row.text;
   if (e.event === 'tool') {
     let state = '更新';
     if (e.status === 'start') state = '运行中';
     else if (e.status === 'end') state = e.isError ? '失败' : '完成';
-    row.el.open = e.status === 'start'; row.label.textContent = `${e.name} · ${state}`;
+    row.label.textContent = `${e.name} · ${state}`;
   }
   if (nearBottom || replay) $('timeline').scrollTop = $('timeline').scrollHeight;
+  updateScrollButton();
 }
 function renderChoices() {
   const pending = histories.get(selected)?.choices || new Map();
@@ -266,10 +291,10 @@ function displayPair(mode) {
   $('pairWebTab').setAttribute('aria-pressed', String(mode === 'web')); $('pairAppTab').setAttribute('aria-pressed', String(mode === 'app'));
   $('qr').src = mode === 'web' ? pairInfo.webQr : pairInfo.qr;
   $('pairUrl').value = mode === 'web' ? pairInfo.browserUrl : pairInfo.url;
-  $('pairHelp').textContent = mode === 'web' ? '手机相机扫码，直接打开同一个网页并登录。可选择 agent、新建聊天、切换模型、删除会话，不需要 APK。' : '可选 Android APP 扫描此二维码连接同一个 Linux 服务。APP 可使用系统前台监听和后台通知。';
+  $('pairHelp').textContent = mode === 'web' ? ($('pairCredentials').checked ? '二维码包含登录权限。扫码即可登录，不要分享。' : '扫码打开同一个网页，再输入管理员设置的配对码登录。') : '可选 Android APP 扫描此二维码连接同一个 Linux 服务。APP 可使用系统前台监听和后台通知。';
 }
 $('loginForm').onsubmit = e => { e.preventDefault(); token = $('token').value.trim(); if (!$('rememberToken').checked) store('pairToken', '', true); formError('loginError', ''); connect(); };
-$('logout').onclick = () => { token = ''; connected = false; clearTimeout(retry); clearTimeout(authTimer); const old = ws; ws = null; old?.close(); rejectRequests('已退出登录'); store('pairToken', ''); store('pairToken', '', true); sessions = []; histories.clear(); selected = ''; $('workspace').hidden = true; $('login').hidden = false; $('logout').hidden = true; $('connection').textContent = '未连接'; $('loginButton').disabled = false; for (const id of ['createDialog', 'deleteDialog', 'pairDialog', 'renameDialog']) closeDialog(id); renderControls(); };
+$('logout').onclick = () => { token = ''; connected = false; clearTimeout(retry); clearTimeout(authTimer); const old = ws; ws = null; old?.close(); rejectRequests('已退出登录'); store('pairToken', ''); store('pairToken', '', true); sessions = []; histories.clear(); selected = ''; $('workspace').hidden = true; $('login').hidden = false; $('logout').hidden = true; $('connection').textContent = '未连接'; $('token').value = ''; $('loginButton').disabled = false; for (const id of ['createDialog', 'deleteDialog', 'pairDialog', 'renameDialog']) closeDialog(id); renderControls(); };
 $('sidebarToggle').onclick = () => setSidebar(!$('sidebar').classList.contains('open')); $('sidebarBackdrop').onclick = () => setSidebar(false);
 $('newSession').onclick = openCreate; emptyNew.onclick = openCreate; $('closeCreate').onclick = () => closeDialog('createDialog'); $('cancelCreate').onclick = () => closeDialog('createDialog');
 $('agent').onchange = () => { store('lastAgent', $('agent').value); agentHint(); };
@@ -277,25 +302,40 @@ $('createForm').onsubmit = async e => {
   e.preventDefault(); if (createBusy) return; createBusy = true; agentHint(); formError('createError', ''); $('createButton').textContent = '启动 agent、加载模型…';
   try { const s = await api('create', { agent: $('agent').value, cwd: $('cwd').value.trim() || '.', title: $('sessionName').value.trim() }); await selectSession(s.id, s); closeDialog('createDialog'); $('sessionName').value = ''; }
   catch (e) { formError('createError', e.message); }
-  finally { createBusy = false; $('createButton').textContent = '创建并开始聊天 ↗'; agentHint(); }
+  finally { createBusy = false; $('createButton').textContent = '创建会话'; agentHint(); }
 };
 $('sessionSearch').oninput = renderSessions; $('modelSearch').oninput = renderControls;
 $('model').onchange = async () => { const id = selected, model = $('model').value; try { await action('model', { sessionId: id, model }); } catch (e) { toast(e.message); } finally { modelSignature = ''; renderControls(); } };
-$('prompt').oninput = () => { if (selected) drafts.set(selected, $('prompt').value); };
+function resizeComposer() { $('prompt').style.height = 'auto'; $('prompt').style.height = `${Math.min(160, $('prompt').scrollHeight)}px`; }
+$('prompt').oninput = () => { if (selected) drafts.set(selected, $('prompt').value); resizeComposer(); };
 $('promptForm').onsubmit = async e => {
   e.preventDefault(); const id = selected, text = $('prompt').value; if (!text.trim() || $('send').disabled) return;
-  try { await action('prompt', { sessionId: id, text }); if (selected === id && $('prompt').value === text) { $('prompt').value = ''; drafts.delete(id); } }
+  try { await action('prompt', { sessionId: id, text }); if (selected === id && $('prompt').value === text) { $('prompt').value = ''; drafts.delete(id); resizeComposer(); } }
   catch (e) { toast(e.message); }
 };
-$('prompt').onkeydown = e => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey && matchMedia('(pointer:fine)').matches)) { e.preventDefault(); $('promptForm').requestSubmit(); } };
+$('prompt').onkeydown = e => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey && enterMode === 'enter' && matchMedia('(pointer:fine)').matches)) { e.preventDefault(); $('promptForm').requestSubmit(); } };
 $('stop').onclick = async () => { try { await action('abort'); } catch (e) { toast(e.message); } };
 $('closeSession').onclick = async () => { try { await action('close'); } catch (e) { toast(e.message); } };
 $('deleteSession').onclick = () => showDelete(selected); $('cancelDelete').onclick = () => closeDialog('deleteDialog');
 $('confirmDelete').onclick = async () => { const id = deleteTarget; $('confirmDelete').disabled = true; $('confirmDelete').textContent = '停止进程并删除…'; formError('deleteError', ''); try { await action('delete', { sessionId: id }); closeDialog('deleteDialog'); toast('会话和本服务的历史记录已删除'); } catch (e) { formError('deleteError', e.message); $('confirmDelete').disabled = false; $('confirmDelete').textContent = '确认删除'; } };
 $('renameSession').onclick = () => { renameTarget = selected; $('renameTitle').value = current()?.title || ''; formError('renameError', ''); $('renameDialog').showModal(); }; $('cancelRename').onclick = () => closeDialog('renameDialog');
 $('renameForm').onsubmit = async e => { e.preventDefault(); try { await action('rename', { sessionId: renameTarget, title: $('renameTitle').value.trim() }); closeDialog('renameDialog'); } catch (e) { formError('renameError', e.message); } };
-$('pair').onclick = async () => { $('pair').disabled = true; try { pairInfo = await api('pair'); displayPair('web'); $('pairDialog').showModal(); } catch (e) { toast(e.message); } finally { $('pair').disabled = !connected; } };
+$('pair').onclick = async () => { $('pair').disabled = true; try { pairInfo = await api('pair', { includeCredentials: $('pairCredentials').checked }); displayPair('web'); $('pairDialog').showModal(); } catch (e) { toast(e.message); } finally { $('pair').disabled = !connected; } };
 $('pairWebTab').onclick = () => displayPair('web'); $('pairAppTab').onclick = () => displayPair('app'); $('closePair').onclick = () => closeDialog('pairDialog'); $('copyPair').onclick = () => copy(pairMode === 'web' ? pairInfo.browserUrl : pairInfo.payload);
 $('notify').onclick = async () => { try { const permission = await Notification.requestPermission(); toast(permission === 'granted' ? '已允许浏览器通知' : '浏览器未允许通知，仍可在网页中查看状态'); } catch (e) { toast(e.message); } };
+$('pairCredentials').onchange = async () => { try { pairInfo = await api('pair', { includeCredentials: $('pairCredentials').checked }); displayPair(pairMode); } catch (e) { toast(e.message); } };
+$('theme').onclick = () => { const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = next; store('theme', next, true); $('theme').textContent = next === 'dark' ? '☀' : '☾'; };
+$('enterMode').onclick = () => { enterMode = enterMode === 'enter' ? 'ctrlEnter' : 'enter'; store('enterMode', enterMode, true); $('enterMode').textContent = enterMode === 'enter' ? 'Enter ↵' : 'Ctrl+Enter ↵'; $('composerHint').textContent = `${enterMode === 'enter' ? 'Enter' : 'Ctrl/Cmd+Enter'} 发送 · Shift+Enter 换行 · 手机 Enter 换行`; };
+$('projectFilter').onchange = renderSessions;
+$('desktopSidebarToggle').onclick = () => document.body.classList.toggle('sidebar-collapsed');
+function updateScrollButton() { $('scrollLatest').hidden = $('timeline').scrollHeight - $('timeline').scrollTop - $('timeline').clientHeight < 120; }
+$('timeline').onscroll = updateScrollButton;
+$('scrollLatest').onclick = () => { $('timeline').scrollTop = $('timeline').scrollHeight; updateScrollButton(); };
+$('exportSession').onclick = () => { const s = current(), h = histories.get(selected); if (!s || !h?.loaded) return;
+  const lines = [`# ${s.title}`, `Agent: ${s.agent} · ${s.model}`, ''];
+  for (const e of h.events.values()) if (['user', 'message'].includes(e.event) && e.text) lines.push(`## ${e.event === 'user' ? '你' : e.channel || 'Assistant'}`, e.text, '');
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'conversation.md'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+document.addEventListener('click', e => { if (!$('sessionMenu').contains(e.target)) $('sessionMenu').open = false; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { setSidebar(false); $('sessionMenu').open = false; } if (connected && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); if (!$('createDialog').open) openCreate(); } });
 window.addEventListener('online', () => { if (token && !connected) connect(); }); window.addEventListener('focus', () => document.title = 'LAN Agent · Linux AI 控制台');
 if (token) connect();

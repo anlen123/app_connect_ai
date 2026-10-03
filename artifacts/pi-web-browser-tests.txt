@@ -1,0 +1,27 @@
+[WebServer] (node:52594) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 12 tests using 1 worker
+
+(node:52607) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52607) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [desktop-linux-http] › e2e/dashboard.spec.js:25:3 › pi: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.3s)
+  ✓   2 [desktop-linux-http] › e2e/dashboard.spec.js:25:3 › codex: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.3s)
+  ✓   3 [desktop-linux-http] › e2e/dashboard.spec.js:51:1 › phone browser link pairs directly and another device sees chat and deletion (3.2s)
+  ✓   4 [desktop-linux-http] › e2e/dashboard.spec.js:69:1 › invalid login and invalid project directory show useful errors without broken state (847ms)
+  ✓   5 [desktop-linux-http] › e2e/dashboard.spec.js:79:1 › pi-web theme, safe Markdown, collapsed tools, copy/export and manual pairing (3.3s)
+  ✓   6 [desktop-linux-http] › e2e/dashboard.spec.js:101:1 › project filter, session menus and desktop configurable Enter behavior (3.2s)
+(node:52873) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52873) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   7 [phone-linux-http] › e2e/dashboard.spec.js:25:3 › pi: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.6s)
+  ✓   8 [phone-linux-http] › e2e/dashboard.spec.js:25:3 › codex: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.6s)
+  ✓   9 [phone-linux-http] › e2e/dashboard.spec.js:51:1 › phone browser link pairs directly and another device sees chat and deletion (3.5s)
+  ✓  10 [phone-linux-http] › e2e/dashboard.spec.js:69:1 › invalid login and invalid project directory show useful errors without broken state (1.0s)
+  ✓  11 [phone-linux-http] › e2e/dashboard.spec.js:79:1 › pi-web theme, safe Markdown, collapsed tools, copy/export and manual pairing (3.6s)
+  ✓  12 [phone-linux-http] › e2e/dashboard.spec.js:101:1 › project filter, session menus and desktop configurable Enter behavior (3.9s)
+
+  12 passed (39.8s)

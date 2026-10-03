@@ -1,6 +1,6 @@
 // Deterministic E2E agent; never enabled in production server.
 import { createBridge } from '../src/server.js';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const factory = (kind, cwd, emit) => ({
@@ -19,7 +19,9 @@ const factory = (kind, cwd, emit) => ({
   async abort() { clearTimeout(this.timer); emit('completed', { status: 'cancelled' }); },
   close() { clearTimeout(this.timer); this.closed = true; }
 });
-const b = createBridge({ root: mkdtempSync(join(tmpdir(), 'lan-fixture-')), token: 'test-only-token-0123456789abcdefgh', quiet: true, advertisedUrl: process.env.LAN_URL, agentFactory: factory });
+const root = mkdtempSync(join(tmpdir(), 'lan-fixture-'));
+for (const name of ['project-alpha', 'project-beta']) mkdirSync(join(root, name));
+const b = createBridge({ root, token: process.env.FIXTURE_TOKEN || 'test-only-token-0123456789abcdefgh', quiet: true, advertisedUrl: process.env.LAN_URL, agentFactory: factory });
 const port = Number(process.env.PORT || 8788);
 b.server.listen(port, '0.0.0.0', () => console.log(`Fixture listening ${port}`));
-process.on('SIGTERM', async () => { await b.close(); process.exit(); });
+process.on('SIGTERM', async () => { await b.close(); rmSync(root, { recursive: true, force: true }); process.exit(); });

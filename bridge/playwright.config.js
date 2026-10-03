@@ -13,5 +13,5 @@ export default defineConfig({
     { name: 'desktop-linux-http', use: { viewport: { width: 1400, height: 950 } } },
     { name: 'phone-linux-http', use: { ...devices['Pixel 5'] } },
   ],
-  webServer: { command: 'node test/fixture-server.js', env: { PORT: String(port) }, url: `${baseURL}/health`, reuseExistingServer: false, timeout: 20000 },
+  webServer: { command: 'node test/fixture-server.js', env: { PORT: String(port), FIXTURE_TOKEN: 'CustomPair_42' }, url: `${baseURL}/health`, reuseExistingServer: false, timeout: 20000 },
 });

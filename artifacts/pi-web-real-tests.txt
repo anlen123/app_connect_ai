@@ -1,0 +1,47 @@
+TAP version 13
+# Subtest: real Linux web release gate
+    # Subtest: desktop HTTP UI → real pi: context, real model inference, other device, delete
+    ok 1 - desktop HTTP UI → real pi: context, real model inference, other device, delete
+      ---
+      duration_ms: 34528.239945
+      type: 'test'
+      ...
+    # Subtest: desktop HTTP UI → real codex: context, real model inference, other device, delete
+    ok 2 - desktop HTTP UI → real codex: context, real model inference, other device, delete
+      ---
+      duration_ms: 21946.077947
+      type: 'test'
+      ...
+    # Subtest: phone HTTP UI → real pi: context, real model inference, other device, delete
+    ok 3 - phone HTTP UI → real pi: context, real model inference, other device, delete
+      ---
+      duration_ms: 20814.418361
+      type: 'test'
+      ...
+    # Subtest: phone HTTP UI → real codex: context, real model inference, other device, delete
+    ok 4 - phone HTTP UI → real codex: context, real model inference, other device, delete
+      ---
+      duration_ms: 19595.058763
+      type: 'test'
+      ...
+    # Subtest: delete a real running Codex task from the phone web UI
+    ok 5 - delete a real running Codex task from the phone web UI
+      ---
+      duration_ms: 12644.538791
+      type: 'test'
+      ...
+    1..5
+ok 1 - real Linux web release gate
+  ---
+  duration_ms: 109652.708878
+  type: 'test'
+  ...
+1..1
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 110446.795399
