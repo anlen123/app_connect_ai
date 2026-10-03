@@ -1,0 +1,41 @@
+TAP version 13
+# Subtest: actual Pi/Codex native resume and exposed thinking over Linux LAN HTTP
+    # Subtest: desktop: pi
+    ok 1 - desktop: pi
+      ---
+      duration_ms: 52765.964917
+      type: 'test'
+      ...
+    # Subtest: desktop: codex
+    ok 2 - desktop: codex
+      ---
+      duration_ms: 46904.629508
+      type: 'test'
+      ...
+    # Subtest: phone: pi
+    ok 3 - phone: pi
+      ---
+      duration_ms: 46050.185765
+      type: 'test'
+      ...
+    # Subtest: phone: codex
+    ok 4 - phone: codex
+      ---
+      duration_ms: 51873.830995
+      type: 'test'
+      ...
+    1..4
+ok 1 - actual Pi/Codex native resume and exposed thinking over Linux LAN HTTP
+  ---
+  duration_ms: 197720.059389
+  type: 'test'
+  ...
+1..1
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 198525.900556

@@ -1,15 +1,15 @@
 import { renderMarkdown } from './markdown.js';
 const $ = id => document.getElementById(id);
 const emptyState = $('emptyState'), emptyNew = $('emptyNew');
-const running = new Set(['starting', 'running', 'waiting']);
-const statusNames = { idle: '就绪', starting: '正在启动 agent', running: '正在处理', waiting: '等待你的选择', completed: '已完成', cancelled: '已停止', error: '出现错误', offline: '进程已关闭 · 历史只读' };
+const running = new Set(['starting', 'closing', 'running', 'waiting']);
+const statusNames = { idle: '就绪', starting: '正在启动 agent', running: '正在处理', waiting: '等待你的选择', completed: '已完成', cancelled: '已停止', error: '出现错误', closing: '正在关闭进程', offline: '进程已关闭 · 可重启'  };
 function stored(key, local = false) { try { return (local ? localStorage : sessionStorage).getItem(key) || ''; } catch { return ''; } }
 function store(key, value, local = false) { try { const storage = local ? localStorage : sessionStorage; if (value) storage.setItem(key, value); else storage.removeItem(key); } catch { /* Storage can be disabled; the current tab still works. */ } }
 let token = stored('pairToken') || stored('pairToken', true);
 const fragmentToken = new URLSearchParams(location.hash.slice(1)).get('token');
 if (fragmentToken) { token = fragmentToken; history.replaceState(null, '', location.pathname); }
 let ws, connected = false, retry, authTimer, retryCount = 0, selected = stored('selectedSession');
-let sessions = [], agents = [], root = '', requestIndex = 0, selectionGeneration = 0, renderedSeq = 0, modelSignature = '', createBusy = false, deleteTarget, renameTarget, pairInfo, pairMode = 'web';
+let sessions = [], agents = [], root = '', requestIndex = 0, selectionGeneration = 0, renderedSeq = 0, modelSignature = '', createBusy = false, deleteTarget, renameTarget, pairInfo, pairMode = 'web', taskSeen = false;
 // Request IDs only correlate messages on one socket. They are NOT credentials.
 // Date + counter works on ordinary LAN HTTP, where crypto.randomUUID is unavailable.
 const requestPrefix = Date.now().toString(36);
@@ -155,13 +155,16 @@ function renderControls() {
   $('stop').disabled = !connected || !s?.active || !busy || inflight.has(`${selected}:abort`);
   $('exportSession').disabled = !s || !histories.get(s.id)?.loaded;
   $('renameSession').disabled = !connected || !s; $('deleteSession').disabled = !connected || !s || inflight.has(`${selected}:delete`);
-  $('closeSession').disabled = !connected || !s?.active || inflight.has(`${selected}:close`);
+  $('closeSession').disabled = !connected || !s?.active || ['starting', 'closing'].includes(s.status) || inflight.has(`${selected}:close`);
+  const canRestart = connected && s && !s.active && !['starting', 'closing'].includes(s.status) && !inflight.has(`${selected}:restart`) && !inflight.has(`${selected}:close`);
+  $('restartSession').disabled = !canRestart; $('restartInline').disabled = !canRestart;
+  $('restartInline').hidden = Boolean(s?.active || ['starting', 'closing'].includes(s?.status));
   const hasModels = Boolean(s?.models?.length);
   $('prompt').disabled = !s?.ready; $('send').disabled = !ready || busy || !hasModels || inflight.has(`${selected}:prompt`);
-  $('prompt').placeholder = !s ? '先新建一个 pi / Codex 会话' : !s.ready ? '进程已停止或未就绪，请新建会话继续' : busy ? '可以先写下一条消息，任务结束后发送' : '输入问题或任务…';
+  $('prompt').placeholder = !s ? '先新建一个 pi / Codex 会话' : !s.ready ? '进程未就绪，请重启进程继续原会话'  : busy ? '可以先写下一条消息，任务结束后发送' : '输入问题或任务…';
   $('model').disabled = !ready || busy || !hasModels || inflight.has(`${selected}:model`); $('modelSearch').disabled = $('model').disabled;
-  const warning = s && !s.ready ? (s.status === 'starting' ? '正在启动 agent 并加载模型，请稍候。启动失败时请检查 Linux CLI 登录与服务日志。' : '会话进程已停止或启动失败。这里可查看历史，重新聊天请新建会话；也可以删除这条记录。') : s && !hasModels ? '该 agent 没有配置可用模型，请在 Linux 终端登录或配置后重新创建会话。' : '';
-  $('sessionWarning').textContent = warning; $('sessionWarning').hidden = !warning;
+  const warning = s && !s.ready ? (s.status === 'starting' ? '正在启动 agent 并加载模型，请稍候。启动失败时请检查 Linux CLI 登录与服务日志。' : s.status === 'closing' ? '正在关闭进程，请稍候。' : '会话进程已停止或启动失败。点击重启进程，继续原会话上下文。' ) : s && !hasModels ? '该 agent 没有配置可用模型，请在 Linux 终端登录或配置后重新创建会话。' : '';
+  $('sessionWarningText').textContent = warning; $('sessionWarning').hidden = !warning;
   resizeComposer();
   $('pending').textContent = inflight.has(`${selected}:model`) ? '正在切换模型…' : inflight.has(`${selected}:prompt`) ? '正在提交…' : '';
   const signature = `${s?.id}:${s?.model}:${s?.models?.length}:${$('modelSearch').value}`;
@@ -174,7 +177,7 @@ function renderControls() {
   }
   agentHint();
 }
-function resetTimeline() { rows.clear(); choiceNodes.clear(); renderedSeq = 0; $('timeline').replaceChildren(); $('choices').replaceChildren(); $('plan').hidden = true; $('plan').textContent = ''; }
+function resetTimeline() { taskSeen = false; $('agentActivity').hidden = true; $('agentActivity').textContent = ''; rows.clear(); choiceNodes.clear(); renderedSeq = 0; $('timeline').replaceChildren(); $('choices').replaceChildren(); $('plan').hidden = true; $('plan').textContent = ''; }
 function renderEmpty() { resetTimeline(); $('timeline').append(emptyState); renderControls(); }
 function applyChoice(h, e) { if (e.event === 'choice') h.choices.set(e.requestId, e); if (e.event === 'choice_closed') h.choices.delete(e.requestId); }
 function applySnapshot(data) {
@@ -208,7 +211,16 @@ function renderHistory() {
 }
 function renderEvent(e, replay = false) {
   if (e.seq <= renderedSeq) return; renderedSeq = e.seq;
+  if (e.channel === 'thinking' && (typeof e.text !== 'string' || !e.text.length)) return;
+  if (e.event === 'activity') {
+    if (taskSeen) { $('agentActivity').hidden = false; $('agentActivity').textContent = e.phase === 'thinking' ? '思考中 · 等待提供方公开内容' : '正在生成回复'; }
+    return;
+  }
+  if (e.event === 'completed' || e.event === 'status' && !['running', 'waiting'].includes(e.status)) $('agentActivity').hidden = true;
   if (['choice', 'choice_closed', 'model', 'status'].includes(e.event)) return;
+  if (e.event === 'user') { taskSeen = true; $('agentActivity').hidden = true; $('plan').hidden = true; $('plan').textContent = ''; }
+  if (['progress', 'plan'].includes(e.event) && !taskSeen) return;
+  if (e.event === 'completed') for (const [key, row] of rows) if (key.startsWith('thinking:')) row.label.textContent = `思考 · 已结束 · ${row.text.length} 字`;
   if (e.event === 'plan') { $('plan').hidden = false; $('plan').textContent = (e.steps || []).map(s => `${s.status === 'completed' ? '✓' : ['inProgress', 'in_progress'].includes(s.status) ? '◉' : '○'} ${s.step}`).join('\n'); return; }
   if (emptyState.parentNode === $('timeline')) emptyState.remove();
   const channel = e.channel || e.event, key = e.key ? `${channel}:${e.key}` : `event:${e.seq}`;
@@ -220,10 +232,12 @@ function renderEvent(e, replay = false) {
     const body = document.createElement('div'); body.className = 'entry-body'; el.append(label, body); $('timeline').append(el); row = { body, el, label, text: '' }; rows.set(key, row);
     if (['assistant', 'user'].includes(channel)) { const button = document.createElement('button'); button.className = 'message-copy'; button.textContent = '复制'; button.type = 'button'; button.onclick = () => copy(row.text); label.prepend(button); }
     if (channel === 'assistant') body.classList.add('markdown');
+    if (channel === 'thinking' && !replay) el.open = true;
   }
   const text = e.text ?? (e.event === 'completed' ? `任务 ${statusNames[e.status] || e.status}${e.error ? '\n' + JSON.stringify(e.error) : ''}` : e.event === 'tool' ? `${e.name} · ${e.status}\n${JSON.stringify(e.detail, null, 2)}` : JSON.stringify(e.detail ?? e));
   if (e.event === 'delta' || e.event === 'tool_output') row.text += text; else row.text = text;
   if (channel === 'assistant') renderMarkdown(row.body, row.text, copy); else row.body.textContent = row.text;
+  if (channel === 'thinking') row.label.textContent = `思考 · ${!replay && running.has(current()?.status) ? '实时接收' : '公开内容'} · ${row.text.length} 字 · ${row.text.replace(/\s+/g, ' ').slice(-70)}`;
   if (e.event === 'tool') {
     let state = '更新';
     if (e.status === 'start') state = '运行中';
@@ -316,6 +330,7 @@ $('promptForm').onsubmit = async e => {
 $('prompt').onkeydown = e => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey && enterMode === 'enter' && matchMedia('(pointer:fine)').matches)) { e.preventDefault(); $('promptForm').requestSubmit(); } };
 $('stop').onclick = async () => { try { await action('abort'); } catch (e) { toast(e.message); } };
 $('closeSession').onclick = async () => { try { await action('close'); } catch (e) { toast(e.message); } };
+$('restartSession').onclick = $('restartInline').onclick = async () => { const id = selected; try { const snapshot = await action('restart', { sessionId: id }); applySnapshot(snapshot); if (selected === id) { renderHistory(); renderControls(); } toast('进程已重启，继续原会话'); } catch (e) { toast(e.message); } };
 $('deleteSession').onclick = () => showDelete(selected); $('cancelDelete').onclick = () => closeDialog('deleteDialog');
 $('confirmDelete').onclick = async () => { const id = deleteTarget; $('confirmDelete').disabled = true; $('confirmDelete').textContent = '停止进程并删除…'; formError('deleteError', ''); try { await action('delete', { sessionId: id }); closeDialog('deleteDialog'); toast('会话和本服务的历史记录已删除'); } catch (e) { formError('deleteError', e.message); $('confirmDelete').disabled = false; $('confirmDelete').textContent = '确认删除'; } };
 $('renameSession').onclick = () => { renameTarget = selected; $('renameTitle').value = current()?.title || ''; formError('renameError', ''); $('renameDialog').showModal(); }; $('cancelRename').onclick = () => closeDialog('renameDialog');

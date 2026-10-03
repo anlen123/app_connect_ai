@@ -71,13 +71,15 @@ class ProcessAgent {
 
 export class PiAgent extends ProcessAgent {
   constructor(cwd, emit, options = {}) {
-    super(options.command || process.env.PI_BIN || 'pi', options.args || ['--mode', 'rpc', '--name', 'LAN Agent', '--extension', fileURLToPath(new URL('./mobile-ui.ts', import.meta.url)), '--append-system-prompt', 'You are controlled from the LAN Agent Android/desktop client. When you need a user choice, clarification, or authorization, use lan_ask_user; custom terminal-only UI does not work here.'], cwd, emit);
-    this.message = 0; this.ui = new Map(); this.failed = false; this.aborted = false;
+    const sessionArgs = options.native?.sessionFile ? ['--session', options.native.sessionFile] : [];
+    if (options.sessionDir) sessionArgs.push('--session-dir', options.sessionDir);
+    super(options.command || process.env.PI_BIN || 'pi', options.args || ['--mode', 'rpc', ...sessionArgs, '--name', 'LAN Agent', '--extension', fileURLToPath(new URL('./mobile-ui.ts', import.meta.url)), '--append-system-prompt', 'You are controlled from the LAN Agent Android/desktop client. When you need a user choice, clarification, or authorization, use lan_ask_user; custom terminal-only UI does not work here.'], cwd, emit);
+    this.instance = randomUUID(); this.message = 0; this.ui = new Map(); this.failed = false; this.aborted = false;
   }
   async init() {
     const [state, list] = await Promise.all([this.request({ type: 'get_state' }), this.request({ type: 'get_available_models' })]);
     await this.enableThinking();
-    return { model: state.model ? `${state.model.provider}/${state.model.id}` : '', models: list.models.map(m => ({ id: `${m.provider}/${m.id}`, name: `${m.name} · ${m.provider}` })) };
+    return { native: { sessionFile: state.sessionFile, sessionId: state.sessionId }, model: state.model ? `${state.model.provider}/${state.model.id}` : '', models: list.models.map(m => ({ id: `${m.provider}/${m.id}`, name: `${m.name} · ${m.provider}` })) };
   }
   async enableThinking() {
     const available = await this.request({ type: 'get_available_thinking_levels' });
@@ -104,11 +106,12 @@ export class PiAgent extends ProcessAgent {
     if (r.type === 'agent_start') { this.running = true; this.emit('status', { status: 'running' }); }
     if (r.type === 'message_update') {
       const e = r.assistantMessageEvent;
-      if (['text_delta', 'thinking_delta'].includes(e?.type)) this.emit('delta', { channel: e.type === 'thinking_delta' ? 'thinking' : 'assistant', key: `pi-${this.message}-${e.contentIndex}`, text: e.delta });
-      if (['text_end', 'thinking_end'].includes(e?.type)) this.emit('content', { channel: e.type === 'thinking_end' ? 'thinking' : 'assistant', key: `pi-${this.message}-${e.contentIndex}`, text: e.content });
+      if (['thinking_start', 'text_start'].includes(e?.type)) this.emit('activity', { phase: e.type === 'thinking_start' ? 'thinking' : 'responding' });
+      if (['text_delta', 'thinking_delta'].includes(e?.type)) this.emit('delta', { channel: e.type === 'thinking_delta' ? 'thinking' : 'assistant', key: `pi-${this.instance}-${this.message}-${e.contentIndex}`, text: e.delta });
+      if (['text_end', 'thinking_end'].includes(e?.type)) this.emit('content', { channel: e.type === 'thinking_end' ? 'thinking' : 'assistant', key: `pi-${this.instance}-${this.message}-${e.contentIndex}`, text: e.content });
     }
     if (r.type === 'message_end' && r.message?.role === 'assistant') {
-      r.message.content?.forEach((b, i) => { if (b.type === 'text' || b.type === 'thinking') this.emit('content', { channel: b.type === 'text' ? 'assistant' : 'thinking', key: `pi-${this.message}-${i}`, text: b.text ?? b.thinking ?? (b.redacted ? '[提供方隐藏了思考内容]' : '') }); });
+      r.message.content?.forEach((b, i) => { if (b.type === 'text' || b.type === 'thinking') this.emit('content', { channel: b.type === 'text' ? 'assistant' : 'thinking', key: `pi-${this.instance}-${this.message}-${i}`, text: b.text ?? b.thinking ?? (b.redacted ? '[提供方隐藏了思考内容]' : '') }); });
       if (['error', 'aborted'].includes(r.message.stopReason)) { this.failed = r.message.stopReason === 'error'; this.aborted = r.message.stopReason === 'aborted'; this.emit('error', { text: r.message.errorMessage || r.message.stopReason }); }
       else if (r.message.stopReason !== 'pending') this.failed = false; // A successful retry supersedes the transient provider failure.
     }
@@ -134,7 +137,7 @@ export class PiAgent extends ProcessAgent {
 export class CodexAgent extends ProcessAgent {
   constructor(cwd, emit, options = {}) {
     super(options.command || process.env.CODEX_BIN || 'codex', options.args || ['app-server', '--listen', 'stdio://'], cwd, emit);
-    this.cwd = cwd; this.ui = new Map(); this.thread = null; this.turn = null; this.selected = null;
+    this.cwd = cwd; this.native = options.native; this.ui = new Map(); this.thread = null; this.turn = null; this.selected = null;
   }
   rpc(method, params = {}) { return this.request({ method, params }); }
   async init() {
@@ -142,12 +145,14 @@ export class CodexAgent extends ProcessAgent {
     this.write({ method: 'initialized', params: {} });
     let models = [], cursor = null;
     do { const page = await this.rpc('model/list', { cursor, limit: 100 }); models.push(...page.data); cursor = page.nextCursor; } while (cursor);
-    const result = await this.rpc('thread/start', { cwd: this.cwd, approvalPolicy: 'on-request', sandbox: 'workspace-write' });
-    this.thread = result.thread.id; this.selected = result.model;
-    return { model: this.selected, models: models.map(m => ({ id: m.model, name: m.displayName || m.model })) };
+    const result = await this.rpc(this.native?.threadId ? 'thread/resume' : 'thread/start', { ...(this.native?.threadId ? { threadId: this.native.threadId, excludeTurns: true } : {}), cwd: this.cwd, approvalPolicy: 'on-request', sandbox: 'workspace-write' });
+    this.thread = result.thread.id; this.selected = result.model; this.models = models;
+    return { native: { threadId: this.thread }, model: this.selected, models: models.map(m => ({ id: m.model, name: m.displayName || m.model })) };
   }
   async prompt(text) {
-    const r = await this.rpc('turn/start', { threadId: this.thread, model: this.selected, summary: 'auto', input: [{ type: 'text', text, text_elements: [] }] });
+    const model = this.models.find(m => m.model === this.selected);
+    const effort = model?.supportedReasoningEfforts?.some(e => e.reasoningEffort === 'medium') ? 'medium' : model?.defaultReasoningEffort;
+    const r = await this.rpc('turn/start', { threadId: this.thread, model: this.selected, effort, summary: 'detailed', input: [{ type: 'text', text, text_elements: [] }] });
     this.turn = r.turn.id;
   }
   async model(id) { this.selected = id; }
@@ -182,6 +187,7 @@ export class CodexAgent extends ProcessAgent {
     if (method === 'item/agentMessage/delta' || method.includes('reasoning/') && method.endsWith('Delta')) this.emit('delta', { channel: method.includes('reasoning/') ? 'thinking' : 'assistant', key: `${p.itemId}-${p.summaryIndex ?? p.contentIndex ?? 0}-${method.includes('textDelta') ? 'raw' : 'summary'}`, text: p.delta });
     if (method === 'item/started' || method === 'item/completed') {
       const item = p.item;
+      if (method === 'item/started' && ['reasoning', 'agentMessage'].includes(item.type)) this.emit('activity', { phase: item.type === 'reasoning' ? 'thinking' : 'responding' });
       if (item.type === 'agentMessage' && method === 'item/completed') this.emit('content', { channel: 'assistant', key: `${item.id}-0-summary`, text: item.text });
       else if (item.type === 'reasoning' && method === 'item/completed') {
         (item.summary || []).forEach((text, i) => this.emit('content', { channel: 'thinking', key: `${item.id}-${i}-summary`, text }));

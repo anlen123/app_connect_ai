@@ -1,0 +1,134 @@
+
+> lan-agent-bridge@1.2.1 test
+> node --test test/*.test.js
+
+TAP version 13
+# Subtest: authenticated websocket: sessions, thinking, model, choice, completion, replay
+ok 1 - authenticated websocket: sessions, thinking, model, choice, completion, replay
+  ---
+  duration_ms: 179.805474
+  type: 'test'
+  ...
+# Subtest: bad token and hostile browser origin rejected
+ok 2 - bad token and hostile browser origin rejected
+  ---
+  duration_ms: 13.853846
+  type: 'test'
+  ...
+# Subtest: restart replays stored history, never pretends child process is alive
+ok 3 - restart replays stored history, never pretends child process is alive
+  ---
+  duration_ms: 6.900834
+  type: 'test'
+  ...
+# Subtest: JSONL handles fragmented UTF8, CRLF and Unicode separators
+ok 4 - JSONL handles fragmented UTF8, CRLF and Unicode separators
+  ---
+  duration_ms: 2.033646
+  type: 'test'
+  ...
+# Subtest: pi normalization waits for settled, replaces authoritative content, exposes all dialogs
+ok 5 - pi normalization waits for settled, replaces authoritative content, exposes all dialogs
+  ---
+  duration_ms: 0.777692
+  type: 'test'
+  ...
+# Subtest: codex normalization: reasoning, task plan, approvals, questions, errors
+ok 6 - codex normalization: reasoning, task plan, approvals, questions, errors
+  ---
+  duration_ms: 1.298978
+  type: 'test'
+  ...
+# Subtest: delete closes process, removes bridge history, persists removal, rejects subsequent access
+ok 7 - delete closes process, removes bridge history, persists removal, rejects subsequent access
+  ---
+  duration_ms: 22.620003
+  type: 'test'
+  ...
+# Subtest: delete is allowed during an unresolved prompt and late failure does not resurrect session
+ok 8 - delete is allowed during an unresolved prompt and late failure does not resurrect session
+  ---
+  duration_ms: 25.396789
+  type: 'test'
+  ...
+# Subtest: delete during agent initialization cannot recreate metadata/history
+ok 9 - delete during agent initialization cannot recreate metadata/history
+  ---
+  duration_ms: 4.224616
+  type: 'test'
+  ...
+# Subtest: rename, close, delete offline and fresh restart maintain correct state
+ok 10 - rename, close, delete offline and fresh restart maintain correct state
+  ---
+  duration_ms: 6.226268
+  type: 'test'
+  ...
+# Subtest: working directory rejects files, missing folders and out-of-root symlinks
+ok 11 - working directory rejects files, missing folders and out-of-root symlinks
+  ---
+  duration_ms: 7.03232
+  type: 'test'
+  ...
+# Subtest: phone browser QR uses browser URL and preserves legacy Android JSON pairing
+ok 12 - phone browser QR uses browser URL and preserves legacy Android JSON pairing
+  ---
+  duration_ms: 50.52356
+  type: 'test'
+  ...
+# Subtest: administrator custom code validation, atomic private persistence and rotation
+ok 13 - administrator custom code validation, atomic private persistence and rotation
+  ---
+  duration_ms: 63.253281
+  type: 'test'
+  ...
+# Subtest: repeated guessing is rate-limited, including on new WebSocket connections
+ok 14 - repeated guessing is rate-limited, including on new WebSocket connections
+  ---
+  duration_ms: 22.205517
+  type: 'test'
+  ...
+# Subtest: default website pairing can omit credentials, legacy opt-in remains compatible
+ok 15 - default website pairing can omit credentials, legacy opt-in remains compatible
+  ---
+  duration_ms: 67.119007
+  type: 'test'
+  ...
+# Subtest: pi recovered retry completes successfully; failed final message stays failed
+ok 16 - pi recovered retry completes successfully; failed final message stays failed
+  ---
+  duration_ms: 1.72633
+  type: 'test'
+  ...
+# Subtest: startup progress is absent, restart retains native reference/model/history across bridge reload
+ok 17 - startup progress is absent, restart retains native reference/model/history across bridge reload
+  ---
+  duration_ms: 43.77738
+  type: 'test'
+  ...
+# Subtest: duplicate restart, live restart and delete during restart are safe
+ok 18 - duplicate restart, live restart and delete during restart are safe
+  ---
+  duration_ms: 5.642262
+  type: 'test'
+  ...
+# Subtest: legacy recovery uses unique evidence and never silently loses context
+ok 19 - legacy recovery uses unique evidence and never silently loses context
+  ---
+  duration_ms: 2.940513
+  type: 'test'
+  ...
+# Subtest: Codex resumes the original native thread and explicitly requests supported public summaries
+ok 20 - Codex resumes the original native thread and explicitly requests supported public summaries
+  ---
+  duration_ms: 0.572399
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 401.792274

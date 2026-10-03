@@ -5,9 +5,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const factory = (kind, cwd, emit) => ({
   closed: false,
-  async init() { return { model: 'test/model-a', models: [{ id: 'test/model-a', name: 'Model A' }, { id: 'test/model-b', name: 'Model B' }] }; },
+  async init() { emit('progress', { text: 'startup-only widget' }); return { model: 'test/model-a', models: [{ id: 'test/model-a', name: 'Model A' }, { id: 'test/model-b', name: 'Model B' }] }; },
   async model(id) { this.selected = id; },
   async prompt(text) {
+    if (text === '分段思考验证') {
+      const key = `stream-${Date.now()}`;
+      emit('delta', { channel: 'thinking', key, text: '第一段公开思考' });
+      await new Promise(r => setTimeout(r, 1500));
+      if (this.closed) return;
+      emit('delta', { channel: 'thinking', key, text: '，第二段实时追加' });
+      await new Promise(r => setTimeout(r, 1500));
+      if (!this.closed) emit('completed', { status: 'completed' });
+      return;
+    }
     emit('delta', { channel: 'thinking', key: `${Date.now()}-thinking`, text: '正在分析局域网任务' });
     emit('delta', { channel: 'assistant', key: `${Date.now()}-answer`, text: '收到任务：' + text });
     emit('plan', { steps: [{ step: '分析请求', status: 'completed' }, { step: '等待授权', status: 'inProgress' }] });

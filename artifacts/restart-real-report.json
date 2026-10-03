@@ -1,0 +1,69 @@
+{
+  "pass": true,
+  "scenarios": [
+    {
+      "kind": "pi",
+      "viewport": "desktop",
+      "nativeReferencePreserved": true,
+      "bridgeReload": true,
+      "actualChildReplaced": true,
+      "retainedContextWithoutTools": true,
+      "modelPreserved": true,
+      "publicThinkingDeltas": 0,
+      "visibleStreamingSamples": 0,
+      "visibleThinkingActivity": 1,
+      "providerOmittedPublicText": true,
+      "insecureHttp": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "kind": "codex",
+      "viewport": "desktop",
+      "nativeReferencePreserved": true,
+      "bridgeReload": true,
+      "actualChildReplaced": true,
+      "retainedContextWithoutTools": true,
+      "modelPreserved": true,
+      "publicThinkingDeltas": 0,
+      "visibleStreamingSamples": 0,
+      "visibleThinkingActivity": 1,
+      "providerOmittedPublicText": true,
+      "insecureHttp": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "kind": "pi",
+      "viewport": "phone",
+      "nativeReferencePreserved": true,
+      "bridgeReload": false,
+      "actualChildReplaced": true,
+      "retainedContextWithoutTools": true,
+      "modelPreserved": true,
+      "publicThinkingDeltas": 0,
+      "visibleStreamingSamples": 0,
+      "visibleThinkingActivity": 1,
+      "providerOmittedPublicText": true,
+      "insecureHttp": true,
+      "pageErrors": [],
+      "pass": true
+    },
+    {
+      "kind": "codex",
+      "viewport": "phone",
+      "nativeReferencePreserved": true,
+      "bridgeReload": false,
+      "actualChildReplaced": true,
+      "retainedContextWithoutTools": true,
+      "modelPreserved": true,
+      "publicThinkingDeltas": 0,
+      "visibleStreamingSamples": 0,
+      "visibleThinkingActivity": 1,
+      "providerOmittedPublicText": true,
+      "insecureHttp": true,
+      "pageErrors": [],
+      "pass": true
+    }
+  ]
+}

@@ -87,8 +87,10 @@ test('pi-web theme, safe Markdown, collapsed tools, copy/export and manual pairi
   await expect(page.locator('.markdown strong')).toHaveText('加粗内容'); await expect(page.locator('.markdown table')).toContainText('test');
   expect(await page.locator('.markdown img,.markdown script,.markdown [onerror],.markdown a[href^="javascript:"]').count()).toBe(0);
   expect(await page.evaluate(() => window.pwned)).toBeUndefined();
-  await expect(page.locator('.entry.thinking')).not.toHaveAttribute('open', '');
-  await page.locator('.entry.thinking > summary').click(); await expect(page.locator('.entry.thinking .entry-body')).toBeVisible();
+  await expect(page.locator('.entry.thinking')).toHaveAttribute('open', '');
+  await expect(page.locator('.entry.thinking .entry-body')).toBeVisible();
+  await page.locator('.entry.thinking > summary').click(); await expect(page.locator('.entry.thinking .entry-body')).not.toBeVisible();
+  await page.locator('.entry.thinking > summary').click();
   await page.locator('.code-copy').click(); await expect(page.locator('#toast')).toContainText('已复制');
   await expect(page.locator('.choice')).toBeVisible(); await page.locator('.choice').getByRole('button', { name: '继续', exact: true }).click(); await expect(page.locator('#status')).toContainText('已完成');
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#exportSession').click()]); expect(download.suggestedFilename()).toBe('conversation.md');

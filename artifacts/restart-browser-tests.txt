@@ -1,0 +1,29 @@
+[2m[WebServer] [22m(node:138497) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 14 tests using 1 worker
+
+(node:138507) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:138507) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 [desktop-linux-http] › e2e/dashboard.spec.js:25:3 › pi: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.5s)
+  ✓   2 [desktop-linux-http] › e2e/dashboard.spec.js:25:3 › codex: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.4s)
+  ✓   3 [desktop-linux-http] › e2e/dashboard.spec.js:51:1 › phone browser link pairs directly and another device sees chat and deletion (3.4s)
+  ✓   4 [desktop-linux-http] › e2e/dashboard.spec.js:69:1 › invalid login and invalid project directory show useful errors without broken state (952ms)
+  ✓   5 [desktop-linux-http] › e2e/dashboard.spec.js:79:1 › pi-web theme, safe Markdown, collapsed tools, copy/export and manual pairing (3.5s)
+  ✓   6 [desktop-linux-http] › e2e/dashboard.spec.js:103:1 › project filter, session menus and desktop configurable Enter behavior (3.5s)
+  ✓   7 [desktop-linux-http] › e2e/restart.spec.js:4:1 › empty new session, visible incremental thinking and stopped-process restart on LAN HTTP (5.2s)
+(node:138795) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:138795) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   8 [phone-linux-http] › e2e/dashboard.spec.js:25:3 › pi: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.7s)
+  ✓   9 [phone-linux-http] › e2e/dashboard.spec.js:25:3 › codex: LAN HTTP create, chat, model, rename, reload, delete and empty state (3.6s)
+  ✓  10 [phone-linux-http] › e2e/dashboard.spec.js:51:1 › phone browser link pairs directly and another device sees chat and deletion (3.7s)
+  ✓  11 [phone-linux-http] › e2e/dashboard.spec.js:69:1 › invalid login and invalid project directory show useful errors without broken state (969ms)
+  ✓  12 [phone-linux-http] › e2e/dashboard.spec.js:79:1 › pi-web theme, safe Markdown, collapsed tools, copy/export and manual pairing (3.8s)
+  ✓  13 [phone-linux-http] › e2e/dashboard.spec.js:103:1 › project filter, session menus and desktop configurable Enter behavior (4.1s)
+  ✓  14 [phone-linux-http] › e2e/restart.spec.js:4:1 › empty new session, visible incremental thinking and stopped-process restart on LAN HTTP (5.5s)
+
+  14 passed (52.8s)

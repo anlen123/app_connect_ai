@@ -1,0 +1,33 @@
+import { test, expect } from '@playwright/test';
+import { menuClick } from '../test/browser-actions.js';
+
+test('empty new session, visible incremental thinking and stopped-process restart on LAN HTTP', async ({ page }) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/'); expect(await page.evaluate(() => isSecureContext)).toBe(false);
+  await page.locator('#token').fill('CustomPair_42'); await page.locator('#loginButton').click();
+  await expect(page.locator('#connection')).toHaveText('● 已连接');
+  if (await page.locator('#sidebarToggle').isVisible()) await page.locator('#sidebarToggle').click();
+  await page.locator('#newSession').click(); await page.locator('#sessionName').fill('重启与思考验证');
+  await page.locator('#createButton').click(); await expect(page.locator('#createDialog')).not.toBeVisible();
+  await expect(page.locator('#status')).toContainText('就绪'); await expect(page.locator('#emptyState')).toBeVisible();
+  await expect(page.locator('.entry.progress')).toHaveCount(0); await expect(page.locator('#plan')).not.toBeVisible();
+  const selected = await page.evaluate(() => sessionStorage.getItem('selectedSession'));
+  await page.locator('#model').selectOption('test/model-b');
+  await page.locator('#prompt').fill('分段思考验证'); await page.locator('#send').click();
+  await expect(page.locator('.entry.thinking .entry-body')).toBeVisible();
+  await expect(page.locator('.entry.thinking .entry-body')).toHaveText('第一段公开思考');
+  await expect(page.locator('.entry.thinking summary')).toContainText('实时接收');
+  await expect(page.locator('.entry.thinking .entry-body')).toHaveText('第一段公开思考，第二段实时追加');
+  await expect(page.locator('#status')).toContainText('正在处理');
+  await expect(page.locator('#status')).toContainText('已完成');
+  await menuClick(page, 'closeSession'); await expect(page.locator('#status')).toContainText('进程已关闭');
+  await expect(page.locator('#send')).toBeDisabled(); await expect(page.locator('#restartInline')).toBeEnabled();
+  await page.locator('#restartInline').click(); await expect(page.locator('#send')).toBeEnabled();
+  await expect(page.locator('#status')).toContainText('就绪'); await expect(page.locator('#model')).toHaveValue('test/model-b');
+  expect(await page.evaluate(() => sessionStorage.getItem('selectedSession'))).toBe(selected);
+  await expect(page.locator('.entry.thinking .entry-body')).toHaveText('第一段公开思考，第二段实时追加');
+  await page.reload(); await expect(page.locator('#connection')).toHaveText('● 已连接');
+  await expect(page.locator('.entry.thinking')).not.toHaveAttribute('open', '');
+  await menuClick(page, 'deleteSession'); await page.locator('#confirmDelete').click();
+  await expect(page.locator('#emptyState')).toBeVisible(); expect(errors).toEqual([]);
+});

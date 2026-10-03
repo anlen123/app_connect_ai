@@ -7,11 +7,12 @@ import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import QRCode from 'qrcode';
 import { PiAgent, CodexAgent } from './agents.js';
-import { VERSION } from './version.js';
+import { VERSION, ANDROID_VERSION } from './version.js';
+import { recoverNative } from './session-recovery.js';
 import { validatePairingCode, savePairingCode } from './pairing-code.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const apkPath = resolve(here, `../../artifacts/lan-agent-${VERSION}.apk`);
+const apkPath = resolve(here, `../../artifacts/lan-agent-${ANDROID_VERSION}.apk`);
 export function agentCatalog() {
   function available(command) {
     const candidates = command.includes('/') ? [command] : (process.env.PATH || '').split(delimiter).map(dir => resolve(dir, command));
@@ -51,7 +52,7 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
   function catalog() { return agentFactory ? agentCatalog().map(a => ({ ...a, available: true })) : agentCatalog(); }
   function summary(s) { return { id: s.id, agent: s.kind, title: s.title, cwd: s.cwd, status: s.status, model: s.model, models: s.models, seq: s.seq, turns: s.turns, tools: s.tools, active: Boolean(s.agent && !s.agent.closed), ready: Boolean(s.initialized && s.agent && !s.agent.closed) }; }
   function save() {
-    const data = [...sessions.values()].map(s => ({ id: s.id, kind: s.kind, title: s.title, cwd: s.cwd, model: s.model, models: s.models }));
+    const data = [...sessions.values()].map(s => ({ id: s.id, kind: s.kind, title: s.title, cwd: s.cwd, model: s.model, models: s.models, native: s.native }));
     writeFileSync(`${metadataPath}.tmp`, JSON.stringify(data), { mode: 0o600 });
     renameSync(`${metadataPath}.tmp`, metadataPath);
   }
@@ -65,6 +66,9 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
   function event(s, type, payload = {}) {
     // A late callback from a deleted process must never recreate its history file.
     if (s.deleted) return;
+    if (['delta', 'content'].includes(type) && payload.channel === 'thinking' && (typeof payload.text !== 'string' || !payload.text.length)) return;
+    // Extension startup widgets are not task progress.
+    if (['progress', 'plan', 'activity'].includes(type) && !['running', 'waiting'].includes(s.status)) return;
     if (type === 'status') s.status = payload.status;
     if (type === 'choice') { s.choices.set(payload.requestId, payload); s.status = 'waiting'; }
     if (type === 'choice_closed') { s.choices.delete(payload.requestId); if (!s.choices.size && s.status === 'waiting') s.status = 'running'; }
@@ -114,7 +118,7 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
     if (u.pathname === '/app.apk') {
       if (!existsSync(apkPath)) { res.writeHead(404); res.end('可直接使用手机浏览器；可选 APK 请从 GitHub Release 下载。'); return; }
       res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-      res.setHeader('Content-Disposition', `attachment; filename="lan-agent-${VERSION}.apk"`);
+      res.setHeader('Content-Disposition', `attachment; filename="lan-agent-${ANDROID_VERSION}.apk"`);
       res.setHeader('X-Content-Type-Options', 'nosniff'); res.end(readFileSync(apkPath)); return;
     }
     const files = { '/': ['index.html', 'text/html; charset=utf-8'], '/app.js': ['app.js', 'text/javascript; charset=utf-8'], '/style.css': ['style.css', 'text/css; charset=utf-8'], '/markdown.js': ['markdown.js', 'text/javascript; charset=utf-8'], '/vendor/marked.js': ['vendor/marked.js', 'text/javascript; charset=utf-8'], '/vendor/purify.js': ['vendor/purify.js', 'text/javascript; charset=utf-8'] };
@@ -157,6 +161,37 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
       } catch (e) { send(ws, { type: 'response', id: command?.id, ok: false, error: e.message }); }
     });
   });
+  async function startAgent(s, model) {
+    if ([...sessions.values()].filter(other => other !== s && (other.status === 'starting' || other.agent && !other.agent.closed)).length >= 8) throw new Error('最多 8 个运行中的 agent，请先关闭或删除不用的会话');
+    const native = agentFactory ? s.native : recoverNative(s);
+    s.cwd = validCwd(s.cwd);
+    const sessionDir = resolve(dataDir, 'native', s.id);
+    mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+    s.busy = true; s.initialized = false;
+    const generation = s.generation = (s.generation || 0) + 1;
+    event(s, 'status', { status: 'starting' });
+    try {
+      if (s.agent) await s.agent.close();
+      if (s.deleted) throw new Error('会话已被删除');
+      const emit = (type, data) => { if (s.generation === generation && !s.deleted) event(s, type, data); };
+      const options = { native, sessionDir };
+      s.agent = agentFactory ? agentFactory(s.kind, s.cwd, emit, options) : new (s.kind === 'pi' ? PiAgent : CodexAgent)(s.cwd, emit, options);
+      const info = await s.agent.init();
+      if (s.deleted) throw new Error('会话已被删除');
+      s.native = info.native || native; s.models = info.models; s.model = info.model;
+      save();
+      if (model) {
+        if (!s.models.some(m => m.id === model)) throw new Error('所选模型不在该 agent 的可用列表中');
+        await s.agent.model(model); s.model = model;
+      }
+      if (s.deleted) throw new Error('会话已被删除');
+      s.initialized = true; save(); event(s, 'status', { status: 'idle' }); return snapshot(s);
+    } catch (e) {
+      await s.agent?.close();
+      if (!s.deleted) { event(s, 'error', { text: e.message, fatal: true }); save(); }
+      throw e;
+    } finally { s.busy = false; }
+  }
   async function handle(c, context = {}) {
     if (c.type === 'list') return [...sessions.values()].map(summary);
     if (c.type === 'agents') return catalog();
@@ -168,25 +203,11 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
     if (c.type === 'create') {
       if (!['pi', 'codex'].includes(c.agent)) throw new Error('请选择 pi 或 codex');
       if (!catalog().find(a => a.id === c.agent)?.available) throw new Error(`Linux 服务上未找到 ${c.agent}，请先安装该 CLI 并登录`);
-      if ([...sessions.values()].filter(s => s.agent && !s.agent.closed).length >= 8) throw new Error('最多 8 个运行中的 agent，请先关闭或删除不用的会话');
+      if ([...sessions.values()].filter(s => s.status === 'starting' || s.agent && !s.agent.closed).length >= 8) throw new Error('最多 8 个运行中的 agent，请先关闭或删除不用的会话');
       const title = typeof c.title === 'string' && c.title.trim() ? c.title.trim().slice(0, 120) : `${c.agent} · ${new Date().toLocaleTimeString()}`;
       const s = { id: randomUUID(), kind: c.agent, title, cwd: validCwd(c.cwd), status: 'starting', models: [], model: '', events: [], seq: 0, choices: new Map(), initialized: false, busy: true, tools: 0, turns: 0 };
       sessions.set(s.id, s); save(); broadcastSessions();
-      try {
-        s.agent = agentFactory ? agentFactory(s.kind, s.cwd, (type, data) => event(s, type, data)) : new (s.kind === 'pi' ? PiAgent : CodexAgent)(s.cwd, (type, data) => event(s, type, data));
-        const info = await s.agent.init();
-        if (s.deleted) throw new Error('会话已被删除');
-        s.models = info.models; s.model = info.model; s.initialized = true;
-        if (c.model) {
-          if (!s.models.some(m => m.id === c.model)) throw new Error('所选模型不在该 agent 的可用列表中');
-          await s.agent.model(c.model); s.model = c.model;
-        }
-        save(); event(s, 'status', { status: 'idle' }); return snapshot(s);
-      } catch (e) {
-        await s.agent?.close();
-        if (!s.deleted) { event(s, 'error', { text: e.message, fatal: true }); save(); }
-        throw e;
-      } finally { s.busy = false; }
+      return startAgent(s, c.model);
     }
     const s = sessions.get(c.sessionId); if (!s) throw new Error('会话不存在，可能已在另一端删除');
     if (c.type === 'subscribe') return snapshot(s);
@@ -199,16 +220,28 @@ export function createBridge({ root = process.cwd(), dataDir = resolve(root, '.l
       try { save(); } catch (e) { s.deleted = false; sessions.set(s.id, s); throw e; }
       await s.agent?.close(); s.agent = null; s.choices.clear();
       rmSync(resolve(dataDir, `${s.id}.jsonl`), { force: true });
+      rmSync(resolve(dataDir, 'native', s.id), { recursive: true, force: true });
       broadcast({ type: 'session_deleted', sessionId: s.id }); broadcastSessions();
       return { deleted: true, sessionId: s.id };
     }
+    if (c.type === 'restart') {
+      if (s.busy) throw new Error('会话正在处理命令，请稍候');
+      if (s.agent && !s.agent.closed) throw new Error('会话进程仍在运行，请先关闭进程');
+      if (!catalog().find(a => a.id === s.kind)?.available) throw new Error(`Linux 服务上未找到 ${s.kind}`);
+      for (const requestId of s.choices.keys()) event(s, 'choice_closed', { requestId });
+      return startAgent(s, s.model);
+    }
     if (c.type === 'close') {
       if (s.busy) throw new Error('会话正在处理命令，可以先停止任务或选择删除会话');
-      await s.agent?.close(); s.agent = null;
-      for (const requestId of s.choices.keys()) event(s, 'choice_closed', { requestId });
-      event(s, 'status', { status: 'offline' }); save(); return summary(s);
+      s.busy = true; s.initialized = false; s.generation = (s.generation || 0) + 1;
+      event(s, 'status', { status: 'closing' });
+      try {
+        await s.agent?.close(); s.agent = null; s.generation = (s.generation || 0) + 1;
+        for (const requestId of s.choices.keys()) event(s, 'choice_closed', { requestId });
+        event(s, 'status', { status: 'offline' }); save(); return summary(s);
+      } finally { s.busy = false; }
     }
-    if (!s.agent || s.agent.closed || !s.initialized) throw new Error('会话进程未就绪或已停止，请新建会话；历史仍可查看');
+    if (!s.agent || s.agent.closed || !s.initialized) throw new Error('会话进程未就绪或已停止，请点击重启进程；历史仍可查看');
     if (c.type === 'abort') { await s.agent.abort(); return {}; }
     // UI answers must bypass the pending prompt lock (Pi commands can await a dialog).
     if (c.type === 'answer') {
